@@ -119,8 +119,12 @@
     </div>
     <nav class="flex-1 mt-4">
         <div class="px-4 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-widest">Geral</div>
-        <a class="flex items-center gap-3 px-6 py-3 text-sm font-medium sidebar-item-active transition-colors" href="#">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+        <a id="navVisaoGeral" class="flex items-center gap-3 px-6 py-3 text-sm font-medium sidebar-item-active transition-colors cursor-pointer" onclick="switchPanel('visao-geral')">
+            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">grid_view</span>
+            Visao Geral
+        </a>
+        <a id="navMetricas" class="flex items-center gap-3 px-6 py-3 text-sm font-medium text-slate-400 hover:text-white transition-colors cursor-pointer" onclick="switchPanel('metricas')">
+            <span class="material-symbols-outlined">dashboard</span>
             Metricas
         </a>
         <a class="flex items-center gap-3 px-6 py-3 text-sm font-medium text-slate-500 cursor-not-allowed" href="#">
@@ -153,8 +157,31 @@
 </aside>
 
 <main class="flex-1 flex flex-col overflow-y-auto bg-background-dark">
-    <!-- Header Principal - Titulo e Acoes -->
-    <header class="sticky top-0 z-30 bg-background-dark/95 backdrop-blur-md border-b border-border-dark">
+
+    <!-- Header Visao Geral (visivel por padrao) -->
+    <header id="headerVisaoGeral" class="sticky top-0 z-30 bg-background-dark/95 backdrop-blur-md border-b border-border-dark">
+        <div class="max-w-7xl mx-auto">
+            <div class="flex items-center justify-between gap-4 px-4 sm:px-6 py-3 sm:py-4">
+                <div class="flex items-center gap-3">
+                    <button class="menu-toggle lg:hidden p-2 -ml-2 text-slate-400 hover:text-white transition-colors" onclick="toggleSidebar()">
+                        <span class="material-symbols-outlined text-2xl">menu</span>
+                    </button>
+                    <div class="min-w-0">
+                        <h1 class="text-base sm:text-xl font-bold text-white truncate">Visao Geral</h1>
+                        <p class="text-[11px] sm:text-xs text-slate-500 truncate">Panorama de todos os clientes</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <button onclick="loadOverviewData()" class="p-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors" title="Atualizar dados">
+                        <span class="material-symbols-outlined text-xl">refresh</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Header Metricas (oculto por padrao) -->
+    <header id="headerMetricas" class="hidden sticky top-0 z-30 bg-background-dark/95 backdrop-blur-md border-b border-border-dark">
         <div class="max-w-7xl mx-auto">
             <!-- Linha 1: Menu + Titulo + Acoes Principais -->
             <div class="flex items-center justify-between gap-4 px-4 sm:px-6 py-3 sm:py-4">
@@ -239,8 +266,48 @@
         </div>
     </div>
 
-    <!-- Dashboard - Visivel por padrao com valores vazios -->
-    <div id="dashboardContent" class="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto w-full">
+    <!-- Painel: Visao Geral (visivel por padrao) -->
+    <div id="panelVisaoGeral" class="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto w-full">
+        <!-- Resumo -->
+        <div class="flex flex-wrap gap-3 sm:gap-4">
+            <div class="flex items-center gap-2 px-3 py-2 bg-surface-dark border border-border-dark rounded-lg">
+                <span class="material-symbols-outlined text-primary text-lg">group</span>
+                <span class="text-xs text-slate-400">Total de Clientes:</span>
+                <span id="overviewTotalClients" class="text-sm font-bold text-white">--</span>
+            </div>
+            <div class="flex items-center gap-2 px-3 py-2 bg-surface-dark border border-border-dark rounded-lg">
+                <span class="material-symbols-outlined text-[#0bda5b] text-lg">check_circle</span>
+                <span class="text-xs text-slate-400">Ativos:</span>
+                <span id="overviewActiveClients" class="text-sm font-bold text-[#0bda5b]">--</span>
+            </div>
+            <div class="flex items-center gap-2 px-3 py-2 bg-surface-dark border border-border-dark rounded-lg">
+                <span class="material-symbols-outlined text-red-500 text-lg">error</span>
+                <span class="text-xs text-slate-400">Com Problemas:</span>
+                <span id="overviewProblemClients" class="text-sm font-bold text-red-500">--</span>
+            </div>
+        </div>
+
+        <!-- Grid de Cards dos Clientes -->
+        <div id="overviewCardsGrid" class="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+            <div id="overviewLoading" class="col-span-full flex flex-col items-center justify-center py-16 text-slate-600">
+                <span class="material-symbols-outlined text-5xl sm:text-6xl mb-3 opacity-50">grid_view</span>
+                <span class="text-sm">Selecione Atualizar para carregar os dados</span>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 text-[10px] sm:text-xs text-slate-600 font-medium pt-4">
+            <p class="text-center sm:text-left">&copy; 2026 | Meta Ads | Desenvolvido por Alisson Gouveia. Todos os direitos reservados.</p>
+            <div class="flex gap-4">
+                <a class="hover:text-slate-400" href="#">Termos</a>
+                <a class="hover:text-slate-400" href="#">Privacidade</a>
+                <a class="hover:text-slate-400" href="#">Suporte</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Painel: Metricas (oculto por padrao) -->
+    <div id="panelMetricas" class="hidden p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto w-full">
         <!-- Cards de Metricas -->
         <div class="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             <!-- Card Valor Investido -->

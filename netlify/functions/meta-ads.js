@@ -35,7 +35,7 @@ exports.handler = async (event, context) => {
         const params = event.queryStringParameters || {};
         const { adAccountId, action, campaignId, adsetId, datePreset, timeRange } = params;
 
-        if (!adAccountId) {
+        if (!adAccountId && action !== 'account-status') {
             return {
                 statusCode: 400,
                 headers,
@@ -46,9 +46,9 @@ exports.handler = async (event, context) => {
             };
         }
 
-        const formattedAccountId = adAccountId.startsWith('act_')
-            ? adAccountId
-            : `act_${adAccountId}`;
+        const formattedAccountId = adAccountId
+            ? (adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`)
+            : null;
 
         let result;
 
@@ -81,6 +81,11 @@ exports.handler = async (event, context) => {
                     };
                 }
                 result = await fetchAds(adsetId, accessToken);
+                break;
+
+            case 'account-status':
+                // Buscar status e saldo de múltiplas contas
+                result = await fetchAccountStatuses(params, accessToken);
                 break;
 
             case 'debug':
@@ -678,6 +683,56 @@ async function fetchDebugActions(accountId, accessToken, params) {
             campaignDetails
         }
     };
+}
+
+// ==========================================
+// BUSCAR STATUS DAS CONTAS (BATCH)
+// ==========================================
+async function fetchAccountStatuses(params, accessToken) {
+    const { accountIds } = params;
+
+    if (!accountIds) {
+        throw new Error('O parâmetro accountIds é obrigatório');
+    }
+
+    const ids = accountIds.split(',').map(id => {
+        const trimmed = id.trim();
+        return trimmed.startsWith('act_') ? trimmed : `act_${trimmed}`;
+    });
+
+    const promises = ids.map(async (accountId) => {
+        try {
+            // Buscar dados da conta e campanhas ativas em paralelo
+            const [accountRes, campaignsRes] = await Promise.all([
+                fetch(`${META_API_BASE}/${accountId}?fields=account_status,balance,amount_spent,currency,disable_reason,name&access_token=${accessToken}`),
+                fetch(`${META_API_BASE}/${accountId}/campaigns?fields=effective_status&filtering=${encodeURIComponent(JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]))}&limit=1&access_token=${accessToken}`)
+            ]);
+
+            const accountData = await accountRes.json();
+            const campaignsData = await campaignsRes.json();
+
+            if (accountData.error) {
+                return { accountId, error: true, message: accountData.error.message };
+            }
+
+            return {
+                accountId,
+                account_status: accountData.account_status,
+                balance: accountData.balance,
+                amount_spent: accountData.amount_spent,
+                currency: accountData.currency || 'BRL',
+                disable_reason: accountData.disable_reason,
+                name: accountData.name,
+                hasActiveCampaigns: !!(campaignsData.data && campaignsData.data.length > 0),
+                error: false
+            };
+        } catch (err) {
+            return { accountId, error: true, message: err.message };
+        }
+    });
+
+    const accounts = await Promise.all(promises);
+    return { accounts };
 }
 
 // ==========================================

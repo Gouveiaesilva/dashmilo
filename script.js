@@ -57,6 +57,9 @@ const USERS = [
 // Usuário atual
 let currentUser = null;
 
+// Painel ativo ('visao-geral' ou 'metricas')
+let currentPanel = 'visao-geral';
+
 // Verificar se usuário está logado ao carregar a página
 function checkLoginStatus() {
     const savedUser = sessionStorage.getItem('currentUser');
@@ -66,6 +69,7 @@ function checkLoginStatus() {
         updateUserInfo(currentUser);
         showDashboard();
         populateClientFilter();
+        loadOverviewData();
     } else {
         showLoginScreen();
     }
@@ -99,6 +103,8 @@ function handleLogin(event) {
         updateUserInfo(user);
         showDashboard();
         populateClientFilter();
+        switchPanel('visao-geral');
+        loadOverviewData();
 
         // Limpar formulário
         document.getElementById('loginEmail').value = '';
@@ -180,6 +186,8 @@ function resetFullDashboardState() {
     cachedAdsets = [];
     currentDatePreset = 'last_7d';
     currentDateRange = null;
+    currentPanel = 'visao-geral';
+    overviewDataCache = null;
 
     // Resetar filtros visuais
     const clientFilter = document.getElementById('clientFilter');
@@ -1539,6 +1547,284 @@ function formatAxisNumber(value) {
     if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
     if (value >= 1000) return (value / 1000).toFixed(value % 1000 === 0 ? 0 : 1) + 'k';
     return String(Math.round(value));
+}
+
+// ==========================================
+// PAINEL SWITCHING (VISÃO GERAL / MÉTRICAS)
+// ==========================================
+
+function switchPanel(panel) {
+    currentPanel = panel;
+
+    const panelVisaoGeral = document.getElementById('panelVisaoGeral');
+    const panelMetricas = document.getElementById('panelMetricas');
+    const headerVisaoGeral = document.getElementById('headerVisaoGeral');
+    const headerMetricas = document.getElementById('headerMetricas');
+    const navVisaoGeral = document.getElementById('navVisaoGeral');
+    const navMetricas = document.getElementById('navMetricas');
+
+    if (panel === 'visao-geral') {
+        panelVisaoGeral.classList.remove('hidden');
+        panelMetricas.classList.add('hidden');
+        headerVisaoGeral.classList.remove('hidden');
+        headerMetricas.classList.add('hidden');
+
+        navVisaoGeral.classList.add('sidebar-item-active');
+        navVisaoGeral.classList.remove('text-slate-400', 'hover:text-white');
+        navVisaoGeral.querySelector('.material-symbols-outlined').style.fontVariationSettings = "'FILL' 1";
+        navMetricas.classList.remove('sidebar-item-active');
+        navMetricas.classList.add('text-slate-400', 'hover:text-white');
+        navMetricas.querySelector('.material-symbols-outlined').style.fontVariationSettings = '';
+    } else if (panel === 'metricas') {
+        panelMetricas.classList.remove('hidden');
+        panelVisaoGeral.classList.add('hidden');
+        headerMetricas.classList.remove('hidden');
+        headerVisaoGeral.classList.add('hidden');
+
+        navMetricas.classList.add('sidebar-item-active');
+        navMetricas.classList.remove('text-slate-400', 'hover:text-white');
+        navMetricas.querySelector('.material-symbols-outlined').style.fontVariationSettings = "'FILL' 1";
+        navVisaoGeral.classList.remove('sidebar-item-active');
+        navVisaoGeral.classList.add('text-slate-400', 'hover:text-white');
+        navVisaoGeral.querySelector('.material-symbols-outlined').style.fontVariationSettings = '';
+    }
+
+    // Fechar sidebar no mobile
+    if (window.innerWidth < 1024) {
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar.classList.contains('open')) {
+            toggleSidebar();
+        }
+    }
+}
+
+// ==========================================
+// VISÃO GERAL - DADOS E CARDS
+// ==========================================
+
+let overviewDataCache = null;
+
+async function loadOverviewData() {
+    const grid = document.getElementById('overviewCardsGrid');
+    const loading = document.getElementById('overviewLoading');
+
+    // Limpar cards existentes
+    grid.querySelectorAll('.overview-client-card').forEach(card => card.remove());
+
+    // Mostrar loading
+    if (loading) {
+        loading.classList.remove('hidden');
+        loading.innerHTML = `
+            <div class="w-10 h-10 border-3 border-primary/20 border-t-primary rounded-full animate-spin mb-4"></div>
+            <span class="text-sm text-slate-500">Carregando dados dos clientes...</span>
+        `;
+    }
+
+    const clients = await loadClients();
+
+    if (clients.length === 0) {
+        if (loading) {
+            loading.classList.remove('hidden');
+            loading.innerHTML = `
+                <span class="material-symbols-outlined text-5xl sm:text-6xl mb-3 opacity-50 text-slate-600">person_off</span>
+                <span class="text-sm text-slate-500">Nenhum cliente cadastrado</span>
+                <span class="text-xs text-slate-600 mt-1">Acesse Ajustes para adicionar clientes</span>
+            `;
+        }
+        updateOverviewSummary(0, 0, 0);
+        return;
+    }
+
+    // Buscar status de todas as contas em uma única chamada
+    const accountIds = clients.map(c => c.adAccountId).join(',');
+
+    try {
+        const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
+        const response = await fetch(`${baseUrl}/.netlify/functions/meta-ads?action=account-status&accountIds=${encodeURIComponent(accountIds)}`);
+        const result = await response.json();
+
+        if (!result.success) {
+            throw new Error(result.message || 'Erro ao buscar status das contas');
+        }
+
+        // Mapear por accountId
+        const statusMap = new Map();
+        (result.accounts || []).forEach(account => {
+            statusMap.set(account.accountId, account);
+        });
+
+        // Esconder loading
+        if (loading) loading.classList.add('hidden');
+
+        // Renderizar cards
+        let activeCount = 0;
+        let problemCount = 0;
+
+        clients.forEach(client => {
+            const formattedId = client.adAccountId.startsWith('act_')
+                ? client.adAccountId
+                : `act_${client.adAccountId}`;
+            const statusData = statusMap.get(formattedId) || { error: true };
+            const cardState = getClientCardState(statusData);
+
+            if (cardState.isActive) activeCount++;
+            if (cardState.hasError) problemCount++;
+
+            const cardHTML = renderOverviewCard(client, statusData, cardState);
+            grid.insertAdjacentHTML('beforeend', cardHTML);
+        });
+
+        updateOverviewSummary(clients.length, activeCount, problemCount);
+        overviewDataCache = { clients, statusMap, timestamp: Date.now() };
+
+    } catch (error) {
+        console.error('Erro ao carregar visao geral:', error);
+        if (loading) {
+            loading.classList.remove('hidden');
+            loading.innerHTML = `
+                <span class="material-symbols-outlined text-5xl text-red-500/50 mb-3">error</span>
+                <span class="text-sm text-slate-500">Erro ao carregar dados</span>
+                <span class="text-xs text-slate-600 mt-1">${error.message}</span>
+                <button onclick="loadOverviewData()" class="mt-4 px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary/90">Tentar novamente</button>
+            `;
+        }
+    }
+}
+
+function getClientCardState(statusData) {
+    if (statusData.error) {
+        return {
+            isActive: false, hasError: true,
+            label: 'Erro', dotColor: 'bg-slate-400',
+            labelClass: 'text-slate-400 bg-slate-400/10',
+            borderClass: 'border-border-dark',
+            pulseAnimation: false
+        };
+    }
+
+    const accountStatus = statusData.account_status;
+    const hasActiveCampaigns = statusData.hasActiveCampaigns;
+
+    // Conta desativada ou sem pagamento
+    if (accountStatus === 2 || accountStatus === 3) {
+        return {
+            isActive: false, hasError: true,
+            label: accountStatus === 3 ? 'Sem saldo' : 'Conta Desativada',
+            dotColor: 'bg-red-500',
+            labelClass: 'text-red-500 bg-red-500/10',
+            borderClass: 'border-red-500',
+            pulseAnimation: true
+        };
+    }
+
+    // Conta em revisão ou fechada
+    if (accountStatus === 7 || accountStatus === 9 || accountStatus === 101) {
+        const labels = { 7: 'Em Revisao', 9: 'Periodo de Graca', 101: 'Fechada' };
+        return {
+            isActive: false, hasError: true,
+            label: labels[accountStatus] || 'Pendente',
+            dotColor: 'bg-yellow-500',
+            labelClass: 'text-yellow-500 bg-yellow-500/10',
+            borderClass: 'border-yellow-500',
+            pulseAnimation: false
+        };
+    }
+
+    // Conta ativa (status 1)
+    if (accountStatus === 1) {
+        if (hasActiveCampaigns) {
+            return {
+                isActive: true, hasError: false,
+                label: 'Ativo',
+                dotColor: 'bg-[#0bda5b]',
+                labelClass: 'text-[#0bda5b] bg-[#0bda5b]/10',
+                borderClass: 'border-[#0bda5b]',
+                pulseAnimation: false
+            };
+        }
+        return {
+            isActive: false, hasError: false,
+            label: 'Sem Campanhas',
+            dotColor: 'bg-slate-400',
+            labelClass: 'text-slate-400 bg-slate-400/10',
+            borderClass: 'border-border-dark',
+            pulseAnimation: false
+        };
+    }
+
+    return {
+        isActive: false, hasError: false,
+        label: 'Desconhecido',
+        dotColor: 'bg-slate-400',
+        labelClass: 'text-slate-400 bg-slate-400/10',
+        borderClass: 'border-border-dark',
+        pulseAnimation: false
+    };
+}
+
+function renderOverviewCard(client, statusData, cardState) {
+    const balanceValue = statusData.error
+        ? '--'
+        : formatOverviewBalance(statusData.balance, statusData.currency);
+    const pulseClass = cardState.pulseAnimation ? 'overview-card-pulse' : '';
+    const balanceColor = cardState.hasError && !cardState.isActive ? 'text-red-400' : 'text-white';
+
+    return `
+        <div class="overview-client-card bg-surface-dark ${cardState.borderClass} border-2 rounded-xl sm:rounded-2xl p-4 sm:p-5 cursor-pointer transition-all hover:shadow-lg group ${pulseClass}"
+             onclick="navigateToClient('${client.id}')">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 bg-${client.color}-500/10 rounded-lg flex items-center justify-center text-${client.color}-500 shrink-0">
+                    <span class="material-symbols-outlined">store</span>
+                </div>
+                <div class="min-w-0 flex-1">
+                    <p class="text-sm font-bold text-white truncate group-hover:text-primary transition-colors">${client.name}</p>
+                    <p class="text-[10px] text-slate-500 font-mono truncate">${client.adAccountId}</p>
+                </div>
+                <span class="material-symbols-outlined text-slate-600 group-hover:text-primary text-lg transition-colors">arrow_forward_ios</span>
+            </div>
+            <div class="flex items-center gap-2 mb-3">
+                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${cardState.labelClass}">
+                    <span class="w-1.5 h-1.5 rounded-full ${cardState.dotColor}"></span>
+                    ${cardState.label}
+                </span>
+            </div>
+            <div class="pt-3 border-t border-border-dark/50">
+                <span class="text-[10px] text-slate-500 uppercase tracking-widest">Saldo da Conta</span>
+                <p class="text-lg font-bold ${balanceColor} mt-0.5">${balanceValue}</p>
+            </div>
+        </div>
+    `;
+}
+
+function formatOverviewBalance(balanceCents, currency) {
+    if (balanceCents === undefined || balanceCents === null) return 'N/D';
+    const value = parseInt(balanceCents) / 100;
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: currency || 'BRL'
+    }).format(value);
+}
+
+function updateOverviewSummary(total, active, problems) {
+    const totalEl = document.getElementById('overviewTotalClients');
+    const activeEl = document.getElementById('overviewActiveClients');
+    const problemEl = document.getElementById('overviewProblemClients');
+
+    if (totalEl) totalEl.textContent = total;
+    if (activeEl) activeEl.textContent = active;
+    if (problemEl) problemEl.textContent = problems;
+}
+
+function navigateToClient(clientId) {
+    // Mudar para painel de métricas
+    switchPanel('metricas');
+
+    // Selecionar o cliente no dropdown
+    const clientFilter = document.getElementById('clientFilter');
+    if (clientFilter) {
+        clientFilter.value = clientId;
+        onClientFilterChange();
+    }
 }
 
 // ==========================================
