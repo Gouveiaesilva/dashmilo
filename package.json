@@ -1,0 +1,8 @@
+{
+  "name": "meta-ads-dashboard",
+  "version": "1.0.0",
+  "description": "Painel Gerencial Meta Ads",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}

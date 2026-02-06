@@ -1,0 +1,511 @@
+/* ==========================================
+   ESTILOS BASE
+   ========================================== */
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100svh;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ==========================================
+   GRID DO GRÁFICO
+   ========================================== */
+
+.chart-grid {
+  background-image: linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* ==========================================
+   SIDEBAR
+   ========================================== */
+
+.sidebar-item-active {
+  background-color: rgba(19, 127, 236, 0.1);
+  color: #137fec;
+  border-right: 2px solid #137fec;
+}
+
+.sidebar {
+  transition: transform 0.3s ease-in-out;
+}
+
+@media (max-width: 1023px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 50;
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 40;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+  }
+
+  .sidebar-overlay.open {
+    opacity: 1;
+    visibility: visible;
+  }
+}
+
+@media (min-width: 1024px) {
+  .sidebar-overlay {
+    display: none;
+  }
+
+  .menu-toggle {
+    display: none;
+  }
+}
+
+/* ==========================================
+   SCROLLBAR CUSTOMIZADA
+   ========================================== */
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.chart-filters,
+.hide-scrollbar {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.chart-filters::-webkit-scrollbar,
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ==========================================
+   FILTROS
+   ========================================== */
+
+.filter-pill {
+  transition: all 0.2s ease;
+}
+
+.filter-pill:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Fade nas bordas do scroll horizontal */
+.scroll-fade {
+  position: relative;
+}
+
+.scroll-fade::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 40px;
+  background: linear-gradient(to right, transparent, #0a0f14);
+  pointer-events: none;
+}
+
+/* ==========================================
+   HEADER
+   ========================================== */
+
+header.scrolled {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+/* ==========================================
+   ANIMAÇÕES DE MODAL
+   ========================================== */
+
+#passwordModal,
+#clientsModal {
+  animation: fadeIn 0.2s ease-out;
+}
+
+#passwordModal > div:last-child,
+#clientsModal > div:last-child {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ==========================================
+   INPUTS
+   ========================================== */
+
+input:focus {
+  outline: none;
+}
+
+/* ==========================================
+   ANIMAÇÃO SHAKE (ERRO DE SENHA)
+   ========================================== */
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.shake {
+  animation: shake 0.3s ease-in-out;
+}
+
+/* ==========================================
+   TOAST NOTIFICATIONS
+   ========================================== */
+
+.animate-slide-up {
+  animation: slideUpToast 0.3s ease-out;
+}
+
+.animate-fade-out {
+  animation: fadeOut 0.3s ease-out forwards;
+}
+
+@keyframes slideUpToast {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ==========================================
+   FILTROS HIERÁRQUICOS
+   ========================================== */
+
+#campaignFilter:disabled,
+#adsetFilter:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#campaignFilter option,
+#adsetFilter option {
+  padding: 8px;
+}
+
+/* ==========================================
+   MODAL DE FILTRO DE PERIODO
+   ========================================== */
+
+#dateFilterModal {
+  animation: fadeIn 0.2s ease-out;
+}
+
+#dateFilterModal > div:last-child {
+  animation: slideUp 0.3s ease-out;
+}
+
+.date-preset-btn.active {
+  border-color: #137fec !important;
+  color: white !important;
+  background-color: rgba(19, 127, 236, 0.1);
+}
+
+/* Estilizar inputs de data */
+input[type="date"] {
+  color-scheme: dark;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
+/* ==========================================
+   TELA DE LOGIN
+   ========================================== */
+
+#loginScreen {
+  animation: fadeIn 0.5s ease-out;
+}
+
+#loginScreen > div {
+  animation: slideUp 0.6s ease-out;
+}
+
+#loginScreen input:focus {
+  outline: none;
+}
+
+/* Checkbox customizado */
+#loginScreen input[type="checkbox"] {
+  cursor: pointer;
+}
+
+#loginScreen input[type="checkbox"]:checked {
+  background-color: #137fec;
+  border-color: #137fec;
+}
+
+/* ==========================================
+   RESPONSIVIDADE MOBILE PREMIUM
+   ========================================== */
+
+/* Melhorar touch targets */
+@media (max-width: 640px) {
+  /* Botões com área de toque maior */
+  button, a, select {
+    min-height: 44px;
+  }
+
+  /* Inputs mais confortáveis */
+  input, select {
+    font-size: 16px !important; /* Previne zoom no iOS */
+  }
+
+  /* Header mais compacto */
+  header {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  /* Cards de métricas - layout otimizado */
+  .grid.grid-cols-1.xs\:grid-cols-2 {
+    gap: 12px;
+  }
+
+  /* Filtros com scroll suave */
+  .hide-scrollbar {
+    scroll-snap-type: x mandatory;
+    scroll-padding: 0 16px;
+  }
+
+  .hide-scrollbar > * {
+    scroll-snap-align: start;
+  }
+
+  /* Toast no mobile */
+  #toast {
+    left: 16px;
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  /* Modais fullscreen no mobile */
+  #clientsModal > div:last-child,
+  #dateFilterModal > div:last-child {
+    max-height: calc(100vh - 32px);
+    max-height: calc(100svh - 32px);
+    margin: 16px;
+    border-radius: 16px;
+  }
+
+  /* Gráfico responsivo */
+  #chartContainer {
+    min-height: 200px;
+  }
+
+  /* Sidebar mobile melhorada */
+  .sidebar {
+    width: 85vw;
+    max-width: 300px;
+  }
+}
+
+/* Telas muito pequenas (iPhone SE, etc) */
+@media (max-width: 375px) {
+  /* Reduzir padding geral */
+  .p-4 {
+    padding: 12px;
+  }
+
+  .px-4 {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  /* Filtros mais compactos */
+  #clientFilter,
+  #campaignFilter,
+  #adsetFilter {
+    max-width: 140px;
+    font-size: 11px !important;
+  }
+
+  /* KPI cards mais compactos */
+  .text-xl {
+    font-size: 1.125rem;
+  }
+
+  /* Botão de período mais compacto */
+  #dateFilterLabelMobile {
+    max-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Orientação landscape no mobile */
+@media (max-height: 500px) and (orientation: landscape) {
+  /* Modal mais compacto */
+  #dateFilterModal > div:last-child {
+    max-height: 90vh;
+  }
+
+  .date-preset-btn {
+    padding: 8px 12px;
+  }
+
+  /* Sidebar scroll */
+  .sidebar nav {
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+  }
+}
+
+/* Tablet (iPad, etc) */
+@media (min-width: 641px) and (max-width: 1023px) {
+  /* Cards em grid 2x2 */
+  .grid.lg\:grid-cols-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Mais espaço para o conteúdo */
+  main {
+    padding-left: 0;
+  }
+}
+
+/* Hover apenas em dispositivos que suportam */
+@media (hover: hover) and (pointer: fine) {
+  .hover\:bg-slate-800:hover {
+    background-color: rgb(30 41 59);
+  }
+}
+
+/* Remove hover em touch devices */
+@media (hover: none) {
+  .hover\:border-slate-600:hover,
+  .hover\:bg-slate-800:hover {
+    border-color: inherit;
+    background-color: inherit;
+  }
+
+  /* Adiciona estado active para feedback tátil */
+  button:active,
+  a:active,
+  select:active {
+    opacity: 0.7;
+    transform: scale(0.98);
+  }
+}
+
+/* Smooth scrolling */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  main {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Suporte a notch/dynamic island */
+@supports (padding-top: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .sidebar {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Loading state melhorado */
+#loadingState {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Animação suave nos cards */
+.bg-surface-dark {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+@media (hover: hover) {
+  .bg-surface-dark:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* Focus visible para acessibilidade */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #137fec;
+  outline-offset: 2px;
+}
+
+/* Melhor contraste em selects */
+select option {
+  background-color: #161c24;
+  color: #e2e8f0;
+  padding: 12px;
+}
