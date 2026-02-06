@@ -1763,11 +1763,23 @@ function getClientCardState(statusData) {
 }
 
 function renderOverviewCard(client, statusData, cardState) {
-    const balanceValue = statusData.error
-        ? '--'
-        : formatOverviewBalance(statusData.balance, statusData.currency);
+    const isPrepay = statusData.is_prepay_account;
     const pulseClass = cardState.pulseAnimation ? 'overview-card-pulse' : '';
     const balanceColor = cardState.hasError && !cardState.isActive ? 'text-red-400' : 'text-white';
+
+    // Montar seção inferior conforme tipo de conta
+    let footerLabel, footerValue;
+    if (statusData.error) {
+        footerLabel = 'Saldo da Conta';
+        footerValue = '--';
+    } else if (isPrepay) {
+        footerLabel = 'Saldo Pre-pago';
+        footerValue = formatOverviewBalance(statusData.balance, statusData.currency);
+    } else {
+        // Conta com cartão (pós-pago) — não tem saldo
+        footerLabel = 'Forma de Pagamento';
+        footerValue = `<span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-base">credit_card</span> Cartao de Credito</span>`;
+    }
 
     return `
         <div class="overview-client-card bg-surface-dark ${cardState.borderClass} border-2 rounded-xl sm:rounded-2xl p-4 sm:p-5 cursor-pointer transition-all hover:shadow-lg group ${pulseClass}"
@@ -1789,8 +1801,8 @@ function renderOverviewCard(client, statusData, cardState) {
                 </span>
             </div>
             <div class="pt-3 border-t border-border-dark/50">
-                <span class="text-[10px] text-slate-500 uppercase tracking-widest">Saldo da Conta</span>
-                <p class="text-lg font-bold ${balanceColor} mt-0.5">${balanceValue}</p>
+                <span class="text-[10px] text-slate-500 uppercase tracking-widest">${footerLabel}</span>
+                <p class="text-lg font-bold ${balanceColor} mt-0.5">${footerValue}</p>
             </div>
         </div>
     `;

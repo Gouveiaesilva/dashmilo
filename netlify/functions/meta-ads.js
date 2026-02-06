@@ -704,7 +704,7 @@ async function fetchAccountStatuses(params, accessToken) {
         try {
             // Buscar dados da conta e campanhas ativas em paralelo
             const [accountRes, campaignsRes] = await Promise.all([
-                fetch(`${META_API_BASE}/${accountId}?fields=account_status,balance,amount_spent,currency,disable_reason,name&access_token=${accessToken}`),
+                fetch(`${META_API_BASE}/${accountId}?fields=account_status,balance,amount_spent,currency,disable_reason,name,is_prepay_account&access_token=${accessToken}`),
                 fetch(`${META_API_BASE}/${accountId}/campaigns?fields=effective_status&filtering=${encodeURIComponent(JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]))}&limit=1&access_token=${accessToken}`)
             ]);
 
@@ -723,6 +723,7 @@ async function fetchAccountStatuses(params, accessToken) {
                 currency: accountData.currency || 'BRL',
                 disable_reason: accountData.disable_reason,
                 name: accountData.name,
+                is_prepay_account: !!accountData.is_prepay_account,
                 hasActiveCampaigns: !!(campaignsData.data && campaignsData.data.length > 0),
                 error: false
             };
