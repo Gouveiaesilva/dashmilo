@@ -126,7 +126,9 @@ exports.handler = async (event, context) => {
 // BUSCAR CAMPANHAS (função base - todas)
 // ==========================================
 async function fetchCampaigns(accountId, accessToken) {
-    const url = `${META_API_BASE}/${accountId}/campaigns?fields=id,name,objective,status,effective_status&access_token=${accessToken}&limit=500`;
+    // Incluir campanhas em qualquer status (ativas, pausadas, arquivadas) para capturar todas que tiveram veiculação no período
+    const allStatuses = encodeURIComponent('["ACTIVE","PAUSED","ARCHIVED"]');
+    const url = `${META_API_BASE}/${accountId}/campaigns?fields=id,name,objective,status,effective_status&effective_status=${allStatuses}&access_token=${accessToken}&limit=500`;
 
     const response = await fetch(url);
     const result = await response.json();
@@ -259,7 +261,9 @@ function getConversionType(objective) {
 // BUSCAR CONJUNTOS DE ANÚNCIOS (função base - todos)
 // ==========================================
 async function fetchAdsets(campaignId, accessToken) {
-    const url = `${META_API_BASE}/${campaignId}/adsets?fields=id,name,status,effective_status&access_token=${accessToken}&limit=500`;
+    // Incluir conjuntos em qualquer status para capturar todos que tiveram veiculação no período
+    const allStatuses = encodeURIComponent('["ACTIVE","PAUSED","ARCHIVED","CAMPAIGN_PAUSED"]');
+    const url = `${META_API_BASE}/${campaignId}/adsets?fields=id,name,status,effective_status&effective_status=${allStatuses}&access_token=${accessToken}&limit=500`;
 
     const response = await fetch(url);
     const result = await response.json();
@@ -338,7 +342,8 @@ async function fetchAdsetsWithInsights(campaignId, accessToken, params) {
 // BUSCAR ANÚNCIOS
 // ==========================================
 async function fetchAds(adsetId, accessToken) {
-    const url = `${META_API_BASE}/${adsetId}/ads?fields=id,name,status,effective_status&access_token=${accessToken}&limit=500`;
+    const allStatuses = encodeURIComponent('["ACTIVE","PAUSED","ARCHIVED","CAMPAIGN_PAUSED","ADSET_PAUSED"]');
+    const url = `${META_API_BASE}/${adsetId}/ads?fields=id,name,status,effective_status&effective_status=${allStatuses}&access_token=${accessToken}&limit=500`;
 
     const response = await fetch(url);
     const result = await response.json();
