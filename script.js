@@ -1778,7 +1778,7 @@ function renderOverviewCard(client, statusData, cardState) {
     } else {
         // Conta com cartão (pós-pago) — não tem saldo
         footerLabel = 'Forma de Pagamento';
-        footerValue = `<span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-base">credit_card</span> Cartao de Credito</span>`;
+        footerValue = `<span class="material-symbols-outlined text-2xl text-slate-400">credit_card</span>`;
     }
 
     return `
