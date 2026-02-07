@@ -1732,10 +1732,9 @@ function getClientCardState(statusData) {
 
     // Conta ativa (status 1)
     if (accountStatus === 1) {
-        // Conta pré-paga com saldo zerado → inativo / erro de pagamento
-        // Meta retorna balance como "bill amount due": negativo = crédito disponível, 0 ou positivo = sem crédito
+        // Conta pré-paga com saldo zerado → inativo
         const balance = parseInt(statusData.balance || 0);
-        if (statusData.is_prepay_account && balance >= 0) {
+        if (statusData.is_prepay_account && balance === 0) {
             return {
                 isActive: false, hasError: true,
                 label: 'Inativo',
