@@ -1732,6 +1732,19 @@ function getClientCardState(statusData) {
 
     // Conta ativa (status 1)
     if (accountStatus === 1) {
+        // Conta pré-paga com saldo zerado → inativo / erro de pagamento
+        const balance = parseInt(statusData.balance || 0);
+        if (statusData.is_prepay_account && balance <= 0) {
+            return {
+                isActive: false, hasError: true,
+                label: 'Inativo',
+                dotColor: 'bg-red-500',
+                labelClass: 'text-red-500 bg-red-500/10',
+                borderClass: 'border-red-500',
+                pulseAnimation: true
+            };
+        }
+
         if (hasActiveCampaigns) {
             return {
                 isActive: true, hasError: false,
