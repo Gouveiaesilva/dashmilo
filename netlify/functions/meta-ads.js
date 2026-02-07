@@ -127,7 +127,12 @@ exports.handler = async (event, context) => {
 // ==========================================
 async function fetchCampaigns(accountId, accessToken) {
     // Incluir campanhas em qualquer status (ativas, pausadas, arquivadas) para capturar todas que tiveram veiculação no período
-    const url = `${META_API_BASE}/${accountId}/campaigns?fields=id,name,objective,status,effective_status&effective_status=["ACTIVE","PAUSED","ARCHIVED"]&access_token=${accessToken}&limit=500`;
+    const statusFilter = encodeURIComponent(JSON.stringify([{
+        field: 'effective_status',
+        operator: 'IN',
+        value: ['ACTIVE', 'PAUSED', 'ARCHIVED']
+    }]));
+    const url = `${META_API_BASE}/${accountId}/campaigns?fields=id,name,objective,status,effective_status&filtering=${statusFilter}&access_token=${accessToken}&limit=500`;
 
     const response = await fetch(url);
     const result = await response.json();
@@ -261,7 +266,12 @@ function getConversionType(objective) {
 // ==========================================
 async function fetchAdsets(campaignId, accessToken) {
     // Incluir conjuntos em qualquer status para capturar todos que tiveram veiculação no período
-    const url = `${META_API_BASE}/${campaignId}/adsets?fields=id,name,status,effective_status&effective_status=["ACTIVE","PAUSED","ARCHIVED","CAMPAIGN_PAUSED"]&access_token=${accessToken}&limit=500`;
+    const statusFilter = encodeURIComponent(JSON.stringify([{
+        field: 'effective_status',
+        operator: 'IN',
+        value: ['ACTIVE', 'PAUSED', 'ARCHIVED', 'CAMPAIGN_PAUSED']
+    }]));
+    const url = `${META_API_BASE}/${campaignId}/adsets?fields=id,name,status,effective_status&filtering=${statusFilter}&access_token=${accessToken}&limit=500`;
 
     const response = await fetch(url);
     const result = await response.json();
@@ -340,7 +350,12 @@ async function fetchAdsetsWithInsights(campaignId, accessToken, params) {
 // BUSCAR ANÚNCIOS
 // ==========================================
 async function fetchAds(adsetId, accessToken) {
-    const url = `${META_API_BASE}/${adsetId}/ads?fields=id,name,status,effective_status&effective_status=["ACTIVE","PAUSED","ARCHIVED","CAMPAIGN_PAUSED","ADSET_PAUSED"]&access_token=${accessToken}&limit=500`;
+    const statusFilter = encodeURIComponent(JSON.stringify([{
+        field: 'effective_status',
+        operator: 'IN',
+        value: ['ACTIVE', 'PAUSED', 'ARCHIVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED']
+    }]));
+    const url = `${META_API_BASE}/${adsetId}/ads?fields=id,name,status,effective_status&filtering=${statusFilter}&access_token=${accessToken}&limit=500`;
 
     const response = await fetch(url);
     const result = await response.json();
