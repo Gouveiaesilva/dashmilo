@@ -1733,11 +1733,8 @@ function getClientCardState(statusData) {
     // Conta ativa (status 1)
     if (accountStatus === 1) {
         // Conta pré-paga com saldo zerado → inativo
-        // Saldo real = spend_cap - amount_spent (ambos em centavos)
-        const spendCap = parseInt(statusData.spend_cap || 0);
-        const amountSpent = parseInt(statusData.amount_spent || 0);
-        const remainingBalance = spendCap - amountSpent;
-        if (statusData.is_prepay_account && remainingBalance <= 0) {
+        const remainingCents = getPrepaidRemainingCents(statusData);
+        if (statusData.is_prepay_account && remainingCents <= 0) {
             return {
                 isActive: false, hasError: true,
                 label: 'Inativo',
@@ -1790,10 +1787,8 @@ function renderOverviewCard(client, statusData, cardState) {
         footerValue = '--';
     } else if (isPrepay) {
         footerLabel = 'Saldo Pre-pago';
-        const spendCap = parseInt(statusData.spend_cap || 0);
-        const amountSpent = parseInt(statusData.amount_spent || 0);
-        const remaining = spendCap - amountSpent;
-        footerValue = formatOverviewBalance(remaining, statusData.currency);
+        const remainingCents = getPrepaidRemainingCents(statusData);
+        footerValue = formatOverviewBalance(remainingCents, statusData.currency);
     } else {
         // Conta com cartão (pós-pago) — não tem saldo
         footerLabel = 'Forma de Pagamento';
@@ -1827,9 +1822,33 @@ function renderOverviewCard(client, statusData, cardState) {
     `;
 }
 
+// Calcular saldo restante de conta pré-paga (em centavos)
+// Prioridade: balance (atualizado em tempo real pela Meta)
+// Fallback: spend_cap - amount_spent (só quando balance = 0 e spend_cap > 0)
+function getPrepaidRemainingCents(statusData) {
+    const balance = parseInt(statusData.balance || '0');
+    const spendCap = parseInt(statusData.spend_cap || '0');
+    const amountSpent = parseInt(statusData.amount_spent || '0');
+
+    // balance é "bill amount due" em centavos:
+    //   negativo = crédito disponível (ex: -500000 = R$5.000 de crédito)
+    //   zero = sem crédito
+    //   positivo = valor devido (raro em pré-pago)
+    if (balance !== 0) {
+        return Math.abs(balance);
+    }
+
+    // Fallback: spend_cap - amount_spent
+    // IMPORTANTE: spend_cap = 0 significa "sem limite" (NÃO "zero reais")
+    if (spendCap > 0) {
+        return Math.max(0, spendCap - amountSpent);
+    }
+
+    return 0;
+}
+
 function formatOverviewBalance(valueCents, currency) {
     if (valueCents === undefined || valueCents === null) return 'N/D';
-    // Valor já vem calculado (spend_cap - amount_spent), em centavos
     const value = Math.max(0, parseInt(valueCents)) / 100;
     return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
