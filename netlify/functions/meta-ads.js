@@ -127,8 +127,7 @@ exports.handler = async (event, context) => {
 // ==========================================
 async function fetchCampaigns(accountId, accessToken) {
     // Incluir campanhas em qualquer status (ativas, pausadas, arquivadas) para capturar todas que tiveram veiculação no período
-    const allStatuses = encodeURIComponent('["ACTIVE","PAUSED","ARCHIVED"]');
-    const url = `${META_API_BASE}/${accountId}/campaigns?fields=id,name,objective,status,effective_status&effective_status=${allStatuses}&access_token=${accessToken}&limit=500`;
+    const url = `${META_API_BASE}/${accountId}/campaigns?fields=id,name,objective,status,effective_status&effective_status=["ACTIVE","PAUSED","ARCHIVED"]&access_token=${accessToken}&limit=500`;
 
     const response = await fetch(url);
     const result = await response.json();
@@ -182,7 +181,7 @@ async function fetchCampaignsWithInsights(accountId, accessToken, params) {
         value: campaignIds
     }]);
 
-    let url = `${META_API_BASE}/${accountId}/insights?fields=campaign_id,impressions,actions&filtering=${encodeURIComponent(filtering)}&access_token=${accessToken}&level=campaign`;
+    let url = `${META_API_BASE}/${accountId}/insights?fields=campaign_id,impressions,actions&filtering=${encodeURIComponent(filtering)}&access_token=${accessToken}&level=campaign&limit=500`;
 
     // Adicionar período
     if (timeRange) {
@@ -262,8 +261,7 @@ function getConversionType(objective) {
 // ==========================================
 async function fetchAdsets(campaignId, accessToken) {
     // Incluir conjuntos em qualquer status para capturar todos que tiveram veiculação no período
-    const allStatuses = encodeURIComponent('["ACTIVE","PAUSED","ARCHIVED","CAMPAIGN_PAUSED"]');
-    const url = `${META_API_BASE}/${campaignId}/adsets?fields=id,name,status,effective_status&effective_status=${allStatuses}&access_token=${accessToken}&limit=500`;
+    const url = `${META_API_BASE}/${campaignId}/adsets?fields=id,name,status,effective_status&effective_status=["ACTIVE","PAUSED","ARCHIVED","CAMPAIGN_PAUSED"]&access_token=${accessToken}&limit=500`;
 
     const response = await fetch(url);
     const result = await response.json();
@@ -307,7 +305,7 @@ async function fetchAdsetsWithInsights(campaignId, accessToken, params) {
         value: adsetIds
     }]);
 
-    let url = `${META_API_BASE}/${formattedAccountId}/insights?fields=adset_id,impressions&filtering=${encodeURIComponent(filtering)}&access_token=${accessToken}&level=adset`;
+    let url = `${META_API_BASE}/${formattedAccountId}/insights?fields=adset_id,impressions&filtering=${encodeURIComponent(filtering)}&access_token=${accessToken}&level=adset&limit=500`;
 
     // Adicionar período
     if (timeRange) {
@@ -342,8 +340,7 @@ async function fetchAdsetsWithInsights(campaignId, accessToken, params) {
 // BUSCAR ANÚNCIOS
 // ==========================================
 async function fetchAds(adsetId, accessToken) {
-    const allStatuses = encodeURIComponent('["ACTIVE","PAUSED","ARCHIVED","CAMPAIGN_PAUSED","ADSET_PAUSED"]');
-    const url = `${META_API_BASE}/${adsetId}/ads?fields=id,name,status,effective_status&effective_status=${allStatuses}&access_token=${accessToken}&limit=500`;
+    const url = `${META_API_BASE}/${adsetId}/ads?fields=id,name,status,effective_status&effective_status=["ACTIVE","PAUSED","ARCHIVED","CAMPAIGN_PAUSED","ADSET_PAUSED"]&access_token=${accessToken}&limit=500`;
 
     const response = await fetch(url);
     const result = await response.json();
@@ -445,7 +442,7 @@ async function fetchInsights(accountId, accessToken, params) {
     }
 
     // BUSCA 1: Totais agregados (sem time_increment) - para KPIs precisos
-    const urlTotals = `${META_API_BASE}/${accountId}/insights?fields=${fields}&filtering=${encodeURIComponent(filtering)}&access_token=${accessToken}&level=${level}${periodParam}`;
+    const urlTotals = `${META_API_BASE}/${accountId}/insights?fields=${fields}&filtering=${encodeURIComponent(filtering)}&access_token=${accessToken}&level=${level}&limit=500${periodParam}`;
 
     const responseTotals = await fetch(urlTotals);
     const resultTotals = await responseTotals.json();
@@ -455,7 +452,7 @@ async function fetchInsights(accountId, accessToken, params) {
     }
 
     // BUSCA 2: Dados diários (com time_increment=1) - para gráfico
-    const urlDaily = `${META_API_BASE}/${accountId}/insights?fields=${fields}&filtering=${encodeURIComponent(filtering)}&access_token=${accessToken}&level=${level}&time_increment=1${periodParam}`;
+    const urlDaily = `${META_API_BASE}/${accountId}/insights?fields=${fields}&filtering=${encodeURIComponent(filtering)}&access_token=${accessToken}&level=${level}&time_increment=1&limit=500${periodParam}`;
 
     const responseDaily = await fetch(urlDaily);
     const resultDaily = await responseDaily.json();
