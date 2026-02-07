@@ -1733,8 +1733,11 @@ function getClientCardState(statusData) {
     // Conta ativa (status 1)
     if (accountStatus === 1) {
         // Conta pré-paga com saldo zerado → inativo
-        const balance = parseInt(statusData.balance || 0);
-        if (statusData.is_prepay_account && balance === 0) {
+        // Saldo real = spend_cap - amount_spent (ambos em centavos)
+        const spendCap = parseInt(statusData.spend_cap || 0);
+        const amountSpent = parseInt(statusData.amount_spent || 0);
+        const remainingBalance = spendCap - amountSpent;
+        if (statusData.is_prepay_account && remainingBalance <= 0) {
             return {
                 isActive: false, hasError: true,
                 label: 'Inativo',
@@ -1787,7 +1790,10 @@ function renderOverviewCard(client, statusData, cardState) {
         footerValue = '--';
     } else if (isPrepay) {
         footerLabel = 'Saldo Pre-pago';
-        footerValue = formatOverviewBalance(statusData.balance, statusData.currency);
+        const spendCap = parseInt(statusData.spend_cap || 0);
+        const amountSpent = parseInt(statusData.amount_spent || 0);
+        const remaining = spendCap - amountSpent;
+        footerValue = formatOverviewBalance(remaining, statusData.currency);
     } else {
         // Conta com cartão (pós-pago) — não tem saldo
         footerLabel = 'Forma de Pagamento';
@@ -1821,11 +1827,10 @@ function renderOverviewCard(client, statusData, cardState) {
     `;
 }
 
-function formatOverviewBalance(balanceCents, currency) {
-    if (balanceCents === undefined || balanceCents === null) return 'N/D';
-    // Meta retorna balance como "bill amount due": negativo = crédito disponível
-    // Usar Math.abs para exibir sempre como valor positivo
-    const value = Math.abs(parseInt(balanceCents)) / 100;
+function formatOverviewBalance(valueCents, currency) {
+    if (valueCents === undefined || valueCents === null) return 'N/D';
+    // Valor já vem calculado (spend_cap - amount_spent), em centavos
+    const value = Math.max(0, parseInt(valueCents)) / 100;
     return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
         currency: currency || 'BRL'
