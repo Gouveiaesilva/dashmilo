@@ -1733,8 +1733,9 @@ function getClientCardState(statusData) {
     // Conta ativa (status 1)
     if (accountStatus === 1) {
         // Conta pré-paga com saldo zerado → inativo / erro de pagamento
+        // Meta retorna balance como "bill amount due": negativo = crédito disponível, 0 ou positivo = sem crédito
         const balance = parseInt(statusData.balance || 0);
-        if (statusData.is_prepay_account && balance <= 0) {
+        if (statusData.is_prepay_account && balance >= 0) {
             return {
                 isActive: false, hasError: true,
                 label: 'Inativo',
@@ -1823,7 +1824,9 @@ function renderOverviewCard(client, statusData, cardState) {
 
 function formatOverviewBalance(balanceCents, currency) {
     if (balanceCents === undefined || balanceCents === null) return 'N/D';
-    const value = parseInt(balanceCents) / 100;
+    // Meta retorna balance como "bill amount due": negativo = crédito disponível
+    // Usar Math.abs para exibir sempre como valor positivo
+    const value = Math.abs(parseInt(balanceCents)) / 100;
     return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
         currency: currency || 'BRL'
