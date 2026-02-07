@@ -1705,11 +1705,11 @@ function getClientCardState(statusData) {
     const accountStatus = statusData.account_status;
     const hasActiveCampaigns = statusData.hasActiveCampaigns;
 
-    // Conta desativada ou sem pagamento
+    // Conta desativada ou sem pagamento → sinalizar como Inativo com borda vermelha
     if (accountStatus === 2 || accountStatus === 3) {
         return {
             isActive: false, hasError: true,
-            label: accountStatus === 3 ? 'Sem saldo' : 'Conta Desativada',
+            label: 'Inativo',
             dotColor: 'bg-red-500',
             labelClass: 'text-red-500 bg-red-500/10',
             borderClass: 'border-red-500',
