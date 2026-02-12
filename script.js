@@ -1558,35 +1558,51 @@ function switchPanel(panel) {
 
     const panelVisaoGeral = document.getElementById('panelVisaoGeral');
     const panelMetricas = document.getElementById('panelMetricas');
+    const panelRelatorios = document.getElementById('panelRelatorios');
     const headerVisaoGeral = document.getElementById('headerVisaoGeral');
     const headerMetricas = document.getElementById('headerMetricas');
+    const headerRelatorios = document.getElementById('headerRelatorios');
     const navVisaoGeral = document.getElementById('navVisaoGeral');
     const navMetricas = document.getElementById('navMetricas');
+    const navRelatorios = document.getElementById('navRelatorios');
 
+    // Esconder todos os paineis e headers
+    panelVisaoGeral.classList.add('hidden');
+    panelMetricas.classList.add('hidden');
+    panelRelatorios.classList.add('hidden');
+    headerVisaoGeral.classList.add('hidden');
+    headerMetricas.classList.add('hidden');
+    headerRelatorios.classList.add('hidden');
+
+    // Resetar todos os navs
+    [navVisaoGeral, navMetricas, navRelatorios].forEach(nav => {
+        nav.classList.remove('sidebar-item-active');
+        nav.classList.add('text-slate-400', 'hover:text-white');
+        nav.querySelector('.material-symbols-outlined').style.fontVariationSettings = '';
+    });
+
+    // Ativar o painel selecionado
     if (panel === 'visao-geral') {
         panelVisaoGeral.classList.remove('hidden');
-        panelMetricas.classList.add('hidden');
         headerVisaoGeral.classList.remove('hidden');
-        headerMetricas.classList.add('hidden');
-
         navVisaoGeral.classList.add('sidebar-item-active');
         navVisaoGeral.classList.remove('text-slate-400', 'hover:text-white');
         navVisaoGeral.querySelector('.material-symbols-outlined').style.fontVariationSettings = "'FILL' 1";
-        navMetricas.classList.remove('sidebar-item-active');
-        navMetricas.classList.add('text-slate-400', 'hover:text-white');
-        navMetricas.querySelector('.material-symbols-outlined').style.fontVariationSettings = '';
     } else if (panel === 'metricas') {
         panelMetricas.classList.remove('hidden');
-        panelVisaoGeral.classList.add('hidden');
         headerMetricas.classList.remove('hidden');
-        headerVisaoGeral.classList.add('hidden');
-
         navMetricas.classList.add('sidebar-item-active');
         navMetricas.classList.remove('text-slate-400', 'hover:text-white');
         navMetricas.querySelector('.material-symbols-outlined').style.fontVariationSettings = "'FILL' 1";
-        navVisaoGeral.classList.remove('sidebar-item-active');
-        navVisaoGeral.classList.add('text-slate-400', 'hover:text-white');
-        navVisaoGeral.querySelector('.material-symbols-outlined').style.fontVariationSettings = '';
+    } else if (panel === 'relatorios') {
+        panelRelatorios.classList.remove('hidden');
+        headerRelatorios.classList.remove('hidden');
+        navRelatorios.classList.add('sidebar-item-active');
+        navRelatorios.classList.remove('text-slate-400', 'hover:text-white');
+        navRelatorios.querySelector('.material-symbols-outlined').style.fontVariationSettings = "'FILL' 1";
+        if (typeof populateReportClientFilter === 'function') {
+            populateReportClientFilter();
+        }
     }
 
     // Fechar sidebar no mobile

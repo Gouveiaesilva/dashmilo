@@ -1,0 +1,10 @@
+node_modules
+package-lock.json
+deno.lock
+nul
+
+# Local Netlify folder
+.netlify
+
+# Claude Code
+.claude/

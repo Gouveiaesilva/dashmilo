@@ -10,7 +10,12 @@
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+
+    <!-- jsPDF para geracao de relatorios -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
     <script src="script.js"></script>
+    <script src="report.js" defer></script>
 
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
@@ -131,9 +136,9 @@
             <span class="material-symbols-outlined">ads_click</span>
             Campanhas <span class="text-[10px] text-slate-600 ml-1">(Em breve)</span>
         </a>
-        <a class="flex items-center gap-3 px-6 py-3 text-sm font-medium text-slate-500 cursor-not-allowed" href="#">
+        <a id="navRelatorios" class="flex items-center gap-3 px-6 py-3 text-sm font-medium text-slate-400 hover:text-white transition-colors cursor-pointer" onclick="switchPanel('relatorios')">
             <span class="material-symbols-outlined">description</span>
-            Relatorios <span class="text-[10px] text-slate-600 ml-1">(Em breve)</span>
+            Relatorios
         </a>
         <a class="flex items-center gap-3 px-6 py-3 text-sm font-medium hover:text-white transition-colors cursor-pointer" onclick="openPasswordModal()">
             <span class="material-symbols-outlined">settings</span>
@@ -253,6 +258,23 @@
                         <span class="material-symbols-outlined text-sm">filter_alt_off</span>
                         <span class="hidden sm:inline">Limpar</span>
                     </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Header Relatorios (oculto por padrao) -->
+    <header id="headerRelatorios" class="hidden sticky top-0 z-30 bg-background-dark/95 backdrop-blur-md border-b border-border-dark">
+        <div class="max-w-7xl mx-auto">
+            <div class="flex items-center justify-between gap-4 px-4 sm:px-6 py-3 sm:py-4">
+                <div class="flex items-center gap-3">
+                    <button class="menu-toggle lg:hidden p-2 -ml-2 text-slate-400 hover:text-white transition-colors" onclick="toggleSidebar()">
+                        <span class="material-symbols-outlined text-2xl">menu</span>
+                    </button>
+                    <div class="min-w-0">
+                        <h1 class="text-base sm:text-xl font-bold text-white truncate">Relatorios</h1>
+                        <p class="text-[11px] sm:text-xs text-slate-500 truncate">Gere relatorios em PDF para seus clientes</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -405,6 +427,90 @@
             </div>
         </div>
     </div>
+
+    <!-- Painel: Relatorios (oculto por padrao) -->
+    <div id="panelRelatorios" class="hidden p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto w-full">
+
+        <!-- Configuracao do Relatorio -->
+        <div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm">
+            <div class="mb-6">
+                <h3 class="text-base sm:text-lg font-bold text-white tracking-tight">Gerar Relatorio</h3>
+                <p class="text-xs sm:text-sm text-slate-500 mt-1">Configure e gere relatorios executivos em PDF</p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                <!-- Selecao de Cliente -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-2">Cliente</label>
+                    <div class="relative">
+                        <select id="reportClientFilter" onchange="onReportClientChange()" class="w-full bg-background-dark border border-border-dark text-slate-300 rounded-lg py-2.5 px-3 text-sm appearance-none focus:ring-primary focus:border-primary hover:border-slate-600 transition-colors cursor-pointer">
+                            <option value="">Selecione um Cliente</option>
+                        </select>
+                        <span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-base">expand_more</span>
+                    </div>
+                </div>
+
+                <!-- Periodo -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-2">Periodo</label>
+                    <div class="relative">
+                        <select id="reportPeriodFilter" onchange="onReportPeriodChange()" class="w-full bg-background-dark border border-border-dark text-slate-300 rounded-lg py-2.5 px-3 text-sm appearance-none focus:ring-primary focus:border-primary hover:border-slate-600 transition-colors cursor-pointer">
+                            <option value="last_7d" selected>Ultimos 7 dias</option>
+                            <option value="last_14d">Ultimos 14 dias</option>
+                            <option value="last_28d">Ultimos 28 dias</option>
+                            <option value="last_30d">Ultimos 30 dias</option>
+                            <option value="this_week">Esta semana</option>
+                            <option value="last_week">Semana passada</option>
+                            <option value="this_month">Este mes</option>
+                            <option value="last_month">Mes passado</option>
+                        </select>
+                        <span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-base">expand_more</span>
+                    </div>
+                </div>
+
+                <!-- Botao Gerar -->
+                <div class="flex items-end">
+                    <button id="generateReportBtn" onclick="generateReport()" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary text-white rounded-lg text-sm font-bold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        <span class="material-symbols-outlined text-lg">picture_as_pdf</span>
+                        Gerar PDF
+                    </button>
+                </div>
+            </div>
+
+            <!-- Info do periodo -->
+            <div id="reportPeriodInfo" class="mt-4 p-3 bg-background-dark border border-border-dark rounded-lg hidden">
+                <div class="flex items-start gap-2 text-xs text-slate-400">
+                    <span class="material-symbols-outlined text-primary text-base shrink-0 mt-0.5">info</span>
+                    <span id="reportPeriodText"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progresso da Geracao -->
+        <div id="reportProgress" class="hidden bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm">
+            <div class="flex items-center gap-4 mb-4">
+                <div class="w-10 h-10 border-3 border-primary/20 border-t-primary rounded-full animate-spin shrink-0"></div>
+                <div>
+                    <h3 class="text-sm font-bold text-white">Gerando Relatorio...</h3>
+                    <p id="reportProgressText" class="text-xs text-slate-500 mt-0.5">Buscando dados da semana...</p>
+                </div>
+            </div>
+            <div class="w-full bg-background-dark rounded-full h-2">
+                <div id="reportProgressBar" class="bg-primary h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 text-[10px] sm:text-xs text-slate-600 font-medium pt-4">
+            <p class="text-center sm:text-left">&copy; 2026 | Meta Ads | Desenvolvido por Alisson Gouveia. Todos os direitos reservados.</p>
+            <div class="flex gap-4">
+                <a class="hover:text-slate-400" href="#">Termos</a>
+                <a class="hover:text-slate-400" href="#">Privacidade</a>
+                <a class="hover:text-slate-400" href="#">Suporte</a>
+            </div>
+        </div>
+    </div>
+
 </main>
 
 <!-- Modal de Senha -->
