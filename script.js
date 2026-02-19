@@ -1328,6 +1328,20 @@ function updateDashboard(data) {
     updateMetricCard('leads', summary.leads, trends.leads, formatNumber);
     updateMetricCard('cpl', summary.cpl, trends.cpl, formatCurrency, true); // CPL: menor é melhor
 
+    // Badge de classificação CPL no card de métricas
+    const cplBadgeEl = document.getElementById('cplClassBadge');
+    const cplTargets = getCurrentClientCplTargets();
+    if (cplBadgeEl) {
+        if (cplTargets && summary.cpl > 0) {
+            const cls = classifyCpl(summary.cpl, cplTargets);
+            cplBadgeEl.className = `inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-${cls.color}-500/10 text-${cls.color}-400`;
+            cplBadgeEl.innerHTML = `<span class="material-symbols-outlined" style="font-size:11px">${cls.icon}</span>${cls.label}`;
+            cplBadgeEl.classList.remove('hidden');
+        } else {
+            cplBadgeEl.classList.add('hidden');
+        }
+    }
+
     // Atualizar gráfico
     if (daily && daily.length > 0) {
         updateChart(daily, 'spend');
@@ -1895,7 +1909,28 @@ function updateRowMetrics(clientId, metrics) {
 
     if (spendEl) spendEl.innerHTML = `<span class="text-sm font-bold text-white">${formatCurrency(metrics.spend)}</span>`;
     if (leadsEl) leadsEl.innerHTML = `<span class="text-sm font-bold text-white">${formatNumber(metrics.leads)}</span>`;
-    if (cplEl) cplEl.innerHTML = `<span class="text-sm font-bold ${metrics.cpl > 0 ? 'text-white' : 'text-slate-500'}">${metrics.cpl > 0 ? formatCurrency(metrics.cpl) : '--'}</span>`;
+
+    if (cplEl) {
+        if (metrics.cpl <= 0) {
+            cplEl.innerHTML = '<span class="text-sm text-slate-500">--</span>';
+        } else {
+            const client = clientsCache.find(c => c.id === clientId);
+            const classification = client?.cplTargets ? classifyCpl(metrics.cpl, client.cplTargets) : null;
+
+            if (classification) {
+                cplEl.innerHTML = `
+                    <div class="flex items-center justify-end gap-2">
+                        <span class="text-sm font-bold text-${classification.color}-400">${formatCurrency(metrics.cpl)}</span>
+                        <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-${classification.color}-500/10 text-${classification.color}-400">
+                            <span class="material-symbols-outlined" style="font-size:10px">${classification.icon}</span>
+                            ${classification.label}
+                        </span>
+                    </div>`;
+            } else {
+                cplEl.innerHTML = `<span class="text-sm font-bold text-white">${formatCurrency(metrics.cpl)}</span>`;
+            }
+        }
+    }
 }
 
 function sortOverviewBoard(field) {
