@@ -726,6 +726,31 @@ function toggleCplBands() {
     arrow.style.transform = section.classList.contains('hidden') ? '' : 'rotate(180deg)';
 }
 
+// Atualizar preview visual das faixas de CPL
+function updateCplPreview() {
+    const excellent = parseFloat(document.getElementById('cplExcellent').value);
+    const healthy = parseFloat(document.getElementById('cplHealthy').value);
+    const warning = parseFloat(document.getElementById('cplWarning').value);
+    const preview = document.getElementById('cplPreview');
+
+    if (!isNaN(excellent) && !isNaN(healthy) && !isNaN(warning) && excellent > 0) {
+        preview.classList.remove('hidden');
+        document.getElementById('cplPreviewExcellent').textContent = `R$${excellent}`;
+        document.getElementById('cplPreviewHealthy').textContent = `R$${healthy}`;
+        document.getElementById('cplPreviewWarning').textContent = `R$${warning}`;
+    } else {
+        preview.classList.add('hidden');
+    }
+}
+
+// Attach listeners ao carregar modal
+document.addEventListener('DOMContentLoaded', () => {
+    ['cplExcellent', 'cplHealthy', 'cplWarning'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', updateCplPreview);
+    });
+});
+
 // Criar HTML de um cliente
 function createClientHTML(client) {
     const cplBadge = client.cplTargets
