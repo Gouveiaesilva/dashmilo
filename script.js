@@ -2268,8 +2268,13 @@ function switchAnalysisTab(tab) {
     // Atualizar visual das abas
     const tabCampaigns = document.getElementById('tabCampaigns');
     const tabCreatives = document.getElementById('tabCreatives');
-    tabCampaigns.className = `flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-md transition-colors ${tab === 'campaigns' ? 'bg-primary/10 text-white' : 'text-slate-400 hover:text-white'}`;
-    tabCreatives.className = `flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-md transition-colors ${tab === 'creatives' ? 'bg-primary/10 text-white' : 'text-slate-400 hover:text-white'}`;
+    const tabAnalyst = document.getElementById('tabAnalyst');
+    const activeClass = 'bg-primary/10 text-white';
+    const inactiveClass = 'text-slate-400 hover:text-white';
+    const base = 'flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-md transition-colors';
+    tabCampaigns.className = `${base} ${tab === 'campaigns' ? activeClass : inactiveClass}`;
+    tabCreatives.className = `${base} ${tab === 'creatives' ? activeClass : inactiveClass}`;
+    tabAnalyst.className = `${base} ${tab === 'analyst' ? activeClass : inactiveClass}`;
 
     // Mostrar seção
     document.getElementById('analysisSection').classList.remove('hidden');
@@ -2277,10 +2282,13 @@ function switchAnalysisTab(tab) {
     if (tab === 'campaigns') {
         updateBreadcrumb([{ label: 'Campanhas' }]);
         loadCampaignAnalysis();
-    } else {
+    } else if (tab === 'creatives') {
         updateBreadcrumb([{ label: 'Criativos' }]);
         creativesOffset = 0;
         loadCreatives();
+    } else if (tab === 'analyst') {
+        updateBreadcrumb([{ label: 'Analista' }]);
+        loadAnalystReport();
     }
 }
 
@@ -2738,6 +2746,284 @@ function classifyMetric(indicator, value) {
     } else {
         return { label: 'Bom', colorClass: 'text-emerald-400', badgeBg: 'bg-emerald-400/10 text-emerald-400' };
     }
+}
+
+// ==========================================
+// AGENTE ANALISTA (MOTOR DE REGRAS)
+// ==========================================
+
+async function loadAnalystReport() {
+    if (!currentAdAccountId) return;
+
+    const loading = document.getElementById('analysisLoading');
+    const content = document.getElementById('analysisContent');
+    loading.classList.remove('hidden');
+    content.innerHTML = '';
+
+    try {
+        // Reutilizar cache ou buscar dados de campanhas
+        if (campaignsDataCache.length === 0) {
+            const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
+            let url = `${baseUrl}/.netlify/functions/meta-ads?adAccountId=${encodeURIComponent(currentAdAccountId)}&action=campaign-analysis`;
+            url += buildPeriodParam();
+
+            const response = await fetch(url);
+            const result = await response.json();
+
+            if (!response.ok || result.error) {
+                throw new Error(result.message || 'Erro ao buscar campanhas');
+            }
+            campaignsDataCache = result.campaigns || [];
+        }
+
+        loading.classList.add('hidden');
+
+        const cplTargets = getCurrentClientCplTargets();
+        const diagnostics = runAnalysisEngine(campaignsDataCache, cplTargets);
+        renderAnalystReport(diagnostics, cplTargets, campaignsDataCache);
+
+    } catch (error) {
+        console.error('Erro ao gerar analise:', error);
+        loading.classList.add('hidden');
+        content.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-8 text-slate-500">
+                <span class="material-symbols-outlined text-4xl mb-2">error_outline</span>
+                <p class="text-sm">${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+function runAnalysisEngine(campaigns, cplTargets) {
+    const diagnostics = [];
+    if (campaigns.length === 0) return diagnostics;
+
+    const totalSpend = campaigns.reduce((s, c) => s + c.metrics.spend, 0);
+    const totalLeads = campaigns.reduce((s, c) => s + c.metrics.leads, 0);
+
+    // ---- Regra 1: CPL Critico ----
+    if (cplTargets) {
+        const criticalCpls = campaigns.filter(c => c.metrics.leads > 0 && c.metrics.cpl > cplTargets.warning);
+        if (criticalCpls.length > 0) {
+            diagnostics.push({
+                severity: 'critical',
+                icon: 'error',
+                title: 'CPL em nivel critico',
+                description: `${criticalCpls.length} campanha(s) com CPL acima de ${formatCurrency(cplTargets.warning)}, o limite maximo aceitavel para este cliente.`,
+                campaigns: criticalCpls.map(c => ({ name: c.name, detail: `CPL ${formatCurrency(c.metrics.cpl)}` })),
+                action: 'Revise os publicos e criativos dessas campanhas. Considere pausar as que nao convertem e redistribuir o orcamento para campanhas com melhor desempenho.'
+            });
+        }
+
+        // ---- Regra 2: CPL Atencao ----
+        const warningCpls = campaigns.filter(c => c.metrics.leads > 0 && c.metrics.cpl > cplTargets.healthy && c.metrics.cpl <= cplTargets.warning);
+        if (warningCpls.length > 0) {
+            diagnostics.push({
+                severity: 'warning',
+                icon: 'warning',
+                title: 'CPL requer atencao',
+                description: `${warningCpls.length} campanha(s) com CPL entre ${formatCurrency(cplTargets.healthy)} e ${formatCurrency(cplTargets.warning)}. Ainda aceitavel, mas proximo do limite.`,
+                campaigns: warningCpls.map(c => ({ name: c.name, detail: `CPL ${formatCurrency(c.metrics.cpl)}` })),
+                action: 'Monitore de perto. Teste novos criativos e segmentacoes para reduzir o custo por lead antes que atinja nivel critico.'
+            });
+        }
+    }
+
+    // ---- Regra 3: Campanha sem leads ----
+    const noLeadsCampaigns = campaigns.filter(c => c.metrics.spend > 10 && c.metrics.leads === 0);
+    if (noLeadsCampaigns.length > 0) {
+        diagnostics.push({
+            severity: 'critical',
+            icon: 'money_off',
+            title: 'Campanhas sem conversoes',
+            description: `${noLeadsCampaigns.length} campanha(s) com investimento ativo mas zero leads no periodo. Orcamento sendo desperdicado.`,
+            campaigns: noLeadsCampaigns.map(c => ({ name: c.name, detail: `Gasto ${formatCurrency(c.metrics.spend)}` })),
+            action: 'Pause imediatamente campanhas com gasto significativo e zero conversoes. Verifique se o pixel/formulario esta funcionando corretamente e se o publico esta alinhado com a oferta.'
+        });
+    }
+
+    // ---- Regra 4: Frequencia alta (fadiga) ----
+    const highFreqCampaigns = campaigns.filter(c => {
+        const freq = c.metrics.reach > 0 ? c.metrics.impressions / c.metrics.reach : 0;
+        return freq > 3.0 && c.status === 'ACTIVE';
+    });
+    if (highFreqCampaigns.length > 0) {
+        diagnostics.push({
+            severity: 'warning',
+            icon: 'repeat',
+            title: 'Frequencia alta — possivel fadiga',
+            description: `${highFreqCampaigns.length} campanha(s) ativa(s) com frequencia acima de 3x. O publico esta vendo os anuncios muitas vezes, o que pode causar fadiga e aumentar o CPL.`,
+            campaigns: highFreqCampaigns.map(c => {
+                const freq = (c.metrics.impressions / c.metrics.reach).toFixed(1);
+                return { name: c.name, detail: `Freq. ${freq}x` };
+            }),
+            action: 'Expanda o publico-alvo ou adicione novos criativos para renovar a comunicacao. Considere excluir quem ja converteu.'
+        });
+    }
+
+    // ---- Regra 5: CTR baixo ----
+    const lowCtrCampaigns = campaigns.filter(c => c.metrics.ctr < 0.7 && c.metrics.impressions > 1000 && c.status === 'ACTIVE');
+    if (lowCtrCampaigns.length > 0) {
+        diagnostics.push({
+            severity: 'warning',
+            icon: 'ads_click',
+            title: 'CTR abaixo do ideal',
+            description: `${lowCtrCampaigns.length} campanha(s) com taxa de cliques inferior a 0.7%. Isso indica que os criativos ou a segmentacao nao estao gerando interesse suficiente.`,
+            campaigns: lowCtrCampaigns.map(c => ({ name: c.name, detail: `CTR ${c.metrics.ctr.toFixed(2)}%` })),
+            action: 'Teste novos formatos de criativo (video, carrossel). Revise o copy e a proposta de valor. Verifique se o publico tem afinidade com a oferta.'
+        });
+    }
+
+    // ---- Regra 6: Poucos criativos ----
+    const fewCreativesCampaigns = campaigns.filter(c => c.activeAdsCount < 3 && c.status === 'ACTIVE');
+    if (fewCreativesCampaigns.length > 0) {
+        diagnostics.push({
+            severity: 'info',
+            icon: 'photo_library',
+            title: 'Diversidade de criativos baixa',
+            description: `${fewCreativesCampaigns.length} campanha(s) ativa(s) com menos de 3 criativos ativos. Pouca variedade limita a otimizacao do algoritmo.`,
+            campaigns: fewCreativesCampaigns.map(c => ({ name: c.name, detail: `${c.activeAdsCount} criativo(s)` })),
+            action: 'Adicione pelo menos 3-5 variacoes de criativo por campanha. Teste diferentes angulos de comunicacao, formatos (imagem vs video) e CTAs.'
+        });
+    }
+
+    // ---- Regra 7: Concentracao de gasto ----
+    if (campaigns.length > 1 && totalSpend > 0) {
+        const concentratedCampaigns = campaigns.filter(c => (c.metrics.spend / totalSpend) > 0.6);
+        if (concentratedCampaigns.length > 0) {
+            diagnostics.push({
+                severity: 'warning',
+                icon: 'pie_chart',
+                title: 'Orcamento concentrado',
+                description: `Uma unica campanha consome mais de 60% do investimento total. Isso aumenta o risco caso ela perca performance.`,
+                campaigns: concentratedCampaigns.map(c => {
+                    const pct = ((c.metrics.spend / totalSpend) * 100).toFixed(0);
+                    return { name: c.name, detail: `${pct}% do total` };
+                }),
+                action: 'Diversifique o investimento entre mais campanhas para reduzir risco. Teste campanhas com diferentes publicos e objetivos.'
+            });
+        }
+    }
+
+    // ---- Regra 8: Saude geral (positiva) ----
+    if (cplTargets && totalLeads > 0) {
+        const healthyCampaigns = campaigns.filter(c => c.metrics.leads > 0 && c.metrics.cpl <= cplTargets.healthy);
+        const avgCpl = totalSpend / totalLeads;
+        if (healthyCampaigns.length > 0 && avgCpl <= cplTargets.healthy) {
+            diagnostics.push({
+                severity: 'success',
+                icon: 'check_circle',
+                title: 'Desempenho geral saudavel',
+                description: `CPL medio de ${formatCurrency(avgCpl)} esta dentro da faixa saudavel. ${healthyCampaigns.length} de ${campaigns.length} campanha(s) com CPL ideal.`,
+                campaigns: healthyCampaigns.map(c => ({ name: c.name, detail: `CPL ${formatCurrency(c.metrics.cpl)}` })),
+                action: 'Mantenha a estrategia atual. Considere escalar gradualmente o orcamento das campanhas com melhor CPL.'
+            });
+        }
+    }
+
+    // Ordenar: critical > warning > info > success
+    const severityOrder = { critical: 0, warning: 1, info: 2, success: 3 };
+    diagnostics.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+
+    return diagnostics;
+}
+
+function renderAnalystReport(diagnostics, cplTargets, campaigns) {
+    const content = document.getElementById('analysisContent');
+    const totalSpend = campaigns.reduce((s, c) => s + c.metrics.spend, 0);
+    const totalLeads = campaigns.reduce((s, c) => s + c.metrics.leads, 0);
+    const avgCpl = totalLeads > 0 ? totalSpend / totalLeads : 0;
+
+    const severityConfig = {
+        critical: { bg: 'bg-red-500/5', border: 'border-red-500/20', iconColor: 'text-red-400', badgeBg: 'bg-red-500/10', badgeText: 'text-red-400', label: 'Critico' },
+        warning: { bg: 'bg-amber-500/5', border: 'border-amber-500/20', iconColor: 'text-amber-400', badgeBg: 'bg-amber-500/10', badgeText: 'text-amber-400', label: 'Atencao' },
+        info: { bg: 'bg-blue-500/5', border: 'border-blue-500/20', iconColor: 'text-blue-400', badgeBg: 'bg-blue-500/10', badgeText: 'text-blue-400', label: 'Info' },
+        success: { bg: 'bg-emerald-500/5', border: 'border-emerald-500/20', iconColor: 'text-emerald-400', badgeBg: 'bg-emerald-500/10', badgeText: 'text-emerald-400', label: 'Saudavel' }
+    };
+
+    // Contadores de severidade
+    const criticalCount = diagnostics.filter(d => d.severity === 'critical').length;
+    const warningCount = diagnostics.filter(d => d.severity === 'warning').length;
+
+    // Header
+    let html = `
+        <div class="mb-6">
+            <div class="flex flex-wrap items-center gap-3 mb-3">
+                <span class="material-symbols-outlined text-primary text-xl">psychology</span>
+                <h3 class="text-base font-bold text-white">Diagnostico do Periodo</h3>
+                <span class="text-xs text-slate-500">${campaigns.length} campanhas analisadas</span>
+            </div>
+            <div class="flex flex-wrap gap-2 mb-4">
+                <span class="text-xs px-2 py-1 rounded bg-surface-dark text-slate-400">Investimento: <strong class="text-white">${formatCurrency(totalSpend)}</strong></span>
+                <span class="text-xs px-2 py-1 rounded bg-surface-dark text-slate-400">Leads: <strong class="text-white">${formatNumber(totalLeads)}</strong></span>
+                <span class="text-xs px-2 py-1 rounded bg-surface-dark text-slate-400">CPL medio: <strong class="text-white">${totalLeads > 0 ? formatCurrency(avgCpl) : '—'}</strong></span>
+                ${criticalCount > 0 ? `<span class="text-xs px-2 py-1 rounded bg-red-500/10 text-red-400 font-bold">${criticalCount} alerta(s) critico(s)</span>` : ''}
+                ${warningCount > 0 ? `<span class="text-xs px-2 py-1 rounded bg-amber-500/10 text-amber-400 font-bold">${warningCount} ponto(s) de atencao</span>` : ''}
+            </div>
+    `;
+
+    // Aviso se CPL não configurado
+    if (!cplTargets) {
+        html += `
+            <div class="flex items-start gap-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/15 mb-4">
+                <span class="material-symbols-outlined text-amber-400 text-lg mt-0.5">info</span>
+                <div>
+                    <p class="text-xs font-semibold text-amber-300">Faixas de CPL nao configuradas</p>
+                    <p class="text-[11px] text-slate-400 mt-0.5">Acesse Gerenciar Clientes e defina as faixas de CPL para obter diagnosticos mais completos sobre custo por lead.</p>
+                </div>
+            </div>
+        `;
+    }
+
+    html += `</div>`;
+
+    // Cards de diagnostico
+    if (diagnostics.length === 0) {
+        html += `
+            <div class="flex flex-col items-center justify-center py-10 text-slate-500">
+                <span class="material-symbols-outlined text-4xl mb-3 opacity-50">task_alt</span>
+                <p class="text-sm font-medium">Nenhum ponto de atencao encontrado</p>
+                <p class="text-xs text-slate-600 mt-1">Todas as campanhas estao dentro dos parametros esperados.</p>
+            </div>
+        `;
+    } else {
+        html += '<div class="space-y-3">';
+        diagnostics.forEach(d => {
+            const cfg = severityConfig[d.severity];
+            html += `
+                <div class="${cfg.bg} border ${cfg.border} rounded-xl p-4">
+                    <div class="flex items-start gap-3">
+                        <span class="material-symbols-outlined ${cfg.iconColor} text-xl mt-0.5 shrink-0">${d.icon}</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1">
+                                <h4 class="text-sm font-bold text-white">${d.title}</h4>
+                                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded ${cfg.badgeBg} ${cfg.badgeText} uppercase">${cfg.label}</span>
+                            </div>
+                            <p class="text-xs text-slate-400 leading-relaxed mb-3">${d.description}</p>
+
+                            <div class="flex flex-wrap gap-1.5 mb-3">
+                                ${d.campaigns.map(c => `
+                                    <span class="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md bg-background-dark border border-border-dark text-slate-300">
+                                        <span class="font-medium truncate max-w-[150px]">${c.name}</span>
+                                        <span class="text-slate-500">·</span>
+                                        <span class="${cfg.badgeText} font-semibold">${c.detail}</span>
+                                    </span>
+                                `).join('')}
+                            </div>
+
+                            <div class="flex items-start gap-2 p-2.5 rounded-lg bg-background-dark/60 border border-border-dark/50">
+                                <span class="material-symbols-outlined text-primary text-sm mt-0.5 shrink-0">lightbulb</span>
+                                <p class="text-[11px] text-slate-300 leading-relaxed"><strong class="text-white">Plano de acao:</strong> ${d.action}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+    }
+
+    content.innerHTML = html;
 }
 
 // ==========================================
