@@ -1348,7 +1348,7 @@ async function generateAnalystPDF() {
     var clientSlug = clientName.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\u00C0-\u024F-]/g, '');
     var periodLabel = (document.getElementById('dateFilterLabel') || {}).textContent || '';
     var periodSlug = periodLabel.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\u00C0-\u024F-\/]/g, '');
-    doc.save('[ANALISE] ' + clientName + ' [' + periodLabel + '].pdf');
+    doc.save('[ANALISE] [' + clientName + '] [' + periodLabel + '].pdf');
 
     showToast('PDF do diagnostico gerado com sucesso!');
 }

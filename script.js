@@ -475,11 +475,19 @@ async function reloadDataWithCurrentFilter() {
     resetCampaignFilter();
     resetAdsetFilter();
 
+    // Limpar cache de análise (período mudou)
+    campaignsDataCache = [];
+
     // Carregar campanhas que tiveram veiculação no período selecionado
     await loadCampaigns(currentAdAccountId);
 
     // Buscar dados gerais (sem filtro de campanha/conjunto)
     fetchClientData(currentAdAccountId, null, null);
+
+    // Se uma aba de análise está ativa, recarregar
+    if (analysisTab) {
+        switchAnalysisTab(analysisTab);
+    }
 }
 
 // Aplicar filtros de campanha/conjunto selecionados (sem resetar)
