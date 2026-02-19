@@ -84,6 +84,7 @@ exports.handler = async (event, context) => {
                 name: client.name,
                 adAccountId: client.adAccountId,
                 color: client.color || getRandomColor(),
+                cplTargets: client.cplTargets || null,
                 createdAt: new Date().toISOString()
             };
 

@@ -290,6 +290,8 @@ function selectDatePreset(preset, label) {
     // Atualizar labels no header
     document.getElementById('dateFilterLabel').textContent = label;
     document.getElementById('dateFilterLabelMobile').textContent = getShortLabel(preset);
+    const overviewLabel = document.getElementById('overviewDateLabel');
+    if (overviewLabel) overviewLabel.textContent = label;
 
     // Fechar modal
     closeDateFilterModal();
@@ -323,6 +325,8 @@ function applyCustomDateRange() {
     // Atualizar labels no header
     document.getElementById('dateFilterLabel').textContent = label;
     document.getElementById('dateFilterLabelMobile').textContent = 'Personalizado';
+    const overviewLabel = document.getElementById('overviewDateLabel');
+    if (overviewLabel) overviewLabel.textContent = label;
 
     // Fechar modal
     closeDateFilterModal();
@@ -500,6 +504,23 @@ let currentDashboardData = null;
 
 // Cache local dos clientes
 let clientsCache = [];
+
+// Obter faixas de CPL do cliente atualmente selecionado
+function getCurrentClientCplTargets() {
+    const clientId = document.getElementById('clientFilter')?.value;
+    if (!clientId) return null;
+    const client = clientsCache.find(c => c.id === clientId);
+    return client?.cplTargets || null;
+}
+
+// Classificar CPL com base nas faixas do cliente
+function classifyCpl(cplValue, cplTargets) {
+    if (!cplTargets || cplValue <= 0) return null;
+    if (cplValue <= cplTargets.excellent) return { label: 'Excelente', color: 'emerald', icon: 'trending_down' };
+    if (cplValue <= cplTargets.healthy) return { label: 'Saudavel', color: 'blue', icon: 'check_circle' };
+    if (cplValue <= cplTargets.warning) return { label: 'Atencao', color: 'amber', icon: 'warning' };
+    return { label: 'Critico', color: 'red', icon: 'error' };
+}
 
 // Carregar clientes da API
 async function loadClients() {
@@ -697,8 +718,21 @@ async function renderClientsList() {
     });
 }
 
+// Toggle seção de faixas de CPL
+function toggleCplBands() {
+    const section = document.getElementById('cplBandsSection');
+    const arrow = document.getElementById('cplBandsArrow');
+    section.classList.toggle('hidden');
+    arrow.style.transform = section.classList.contains('hidden') ? '' : 'rotate(180deg)';
+}
+
 // Criar HTML de um cliente
 function createClientHTML(client) {
+    const cplBadge = client.cplTargets
+        ? `<span class="inline-flex items-center gap-1 text-[10px] text-emerald-400/70 bg-emerald-400/5 px-1.5 py-0.5 rounded ml-1">
+            <span class="w-1 h-1 bg-emerald-400 rounded-full"></span>CPL configurado
+           </span>`
+        : '';
     return `
         <div class="client-card bg-background-dark border border-border-dark rounded-xl p-4 flex items-center justify-between gap-4 group hover:border-slate-600 transition-colors" data-id="${client.id}">
             <div class="flex items-center gap-3 min-w-0">
@@ -706,7 +740,7 @@ function createClientHTML(client) {
                     <span class="material-symbols-outlined">store</span>
                 </div>
                 <div class="min-w-0">
-                    <p class="text-sm font-medium text-white truncate">${client.name}</p>
+                    <p class="text-sm font-medium text-white truncate">${client.name}${cplBadge}</p>
                     <p class="text-xs text-slate-500 truncate font-mono">${client.adAccountId}</p>
                 </div>
             </div>
@@ -739,16 +773,30 @@ async function addClient(event) {
 
     if (!clientName || !adAccountId) return;
 
+    // Coletar faixas de CPL (opcionais)
+    const cplExcellent = parseFloat(document.getElementById('cplExcellent').value);
+    const cplHealthy = parseFloat(document.getElementById('cplHealthy').value);
+    const cplWarning = parseFloat(document.getElementById('cplWarning').value);
+
+    let cplTargets = null;
+    if (!isNaN(cplExcellent) && !isNaN(cplHealthy) && !isNaN(cplWarning)) {
+        if (cplExcellent >= cplHealthy || cplHealthy >= cplWarning) {
+            showToast('Erro: As faixas de CPL devem ser em ordem crescente (Excelente < Saudável < Atenção).');
+            return;
+        }
+        cplTargets = { excellent: cplExcellent, healthy: cplHealthy, warning: cplWarning };
+    }
+
     // Mostrar loading no botão
     const submitBtn = event.target.querySelector('button[type="submit"]');
     const originalText = submitBtn.innerHTML;
     submitBtn.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span> Salvando...';
     submitBtn.disabled = true;
 
-    const result = await addClientAPI(
-        { name: clientName, adAccountId: adAccountId },
-        currentAdminPassword
-    );
+    const clientData = { name: clientName, adAccountId: adAccountId };
+    if (cplTargets) clientData.cplTargets = cplTargets;
+
+    const result = await addClientAPI(clientData, currentAdminPassword);
 
     // Restaurar botão
     submitBtn.innerHTML = originalText;
@@ -762,6 +810,11 @@ async function addClient(event) {
         // Limpar formulário
         document.getElementById('clientName').value = '';
         document.getElementById('adAccountId').value = '';
+        document.getElementById('cplExcellent').value = '';
+        document.getElementById('cplHealthy').value = '';
+        document.getElementById('cplWarning').value = '';
+        document.getElementById('cplBandsSection').classList.add('hidden');
+        document.getElementById('cplBandsArrow').style.transform = '';
         document.getElementById('clientName').focus();
 
         showToast('Cliente adicionado com sucesso!');
@@ -800,6 +853,20 @@ async function editClient(clientId) {
     // Preencher formulário com dados do cliente
     document.getElementById('clientName').value = client.name;
     document.getElementById('adAccountId').value = client.adAccountId;
+
+    // Preencher faixas de CPL se existirem
+    if (client.cplTargets) {
+        document.getElementById('cplExcellent').value = client.cplTargets.excellent || '';
+        document.getElementById('cplHealthy').value = client.cplTargets.healthy || '';
+        document.getElementById('cplWarning').value = client.cplTargets.warning || '';
+        // Abrir a seção de CPL
+        document.getElementById('cplBandsSection').classList.remove('hidden');
+        document.getElementById('cplBandsArrow').style.transform = 'rotate(180deg)';
+    } else {
+        document.getElementById('cplExcellent').value = '';
+        document.getElementById('cplHealthy').value = '';
+        document.getElementById('cplWarning').value = '';
+    }
 
     // Focar no campo nome
     document.getElementById('clientName').focus();
@@ -1140,6 +1207,14 @@ function resetDashboard() {
     // Resetar labels
     document.getElementById('chartLabels').innerHTML = '';
 
+    // Esconder abas e seção de análise
+    const tabBar = document.getElementById('analysisTabBar');
+    if (tabBar) tabBar.classList.add('hidden');
+    const analysisSection = document.getElementById('analysisSection');
+    if (analysisSection) analysisSection.classList.add('hidden');
+    analysisTab = null;
+    creativesCampaignFilter = null;
+
     // Limpar dados atuais
     currentDashboardData = null;
 }
@@ -1232,6 +1307,16 @@ function updateDashboard(data) {
     if (daily && daily.length > 0) {
         updateChart(daily, 'spend');
     }
+
+    // Mostrar barra de abas
+    const tabBar = document.getElementById('analysisTabBar');
+    if (tabBar) tabBar.classList.remove('hidden');
+
+    // Esconder seção de análise (usuário precisa clicar novamente)
+    const analysisSection = document.getElementById('analysisSection');
+    if (analysisSection) analysisSection.classList.add('hidden');
+    analysisTab = null;
+    creativesCampaignFilter = null;
 }
 
 // Atualizar card de métrica
@@ -1615,17 +1700,36 @@ function switchPanel(panel) {
 }
 
 // ==========================================
-// VISÃO GERAL - DADOS E CARDS
+// VISÃO GERAL - DADOS E BOARD
 // ==========================================
 
 let overviewDataCache = null;
+let overviewSortField = null;
+let overviewSortAsc = true;
+
+// Inicializar sort por clique nos headers (event delegation)
+document.addEventListener('DOMContentLoaded', function() {
+    const header = document.getElementById('overviewBoardHeader');
+    if (header) {
+        header.addEventListener('click', function(e) {
+            const col = e.target.closest('.board-sort-col');
+            if (!col) return;
+            const field = col.getAttribute('data-sort');
+            if (field) sortOverviewBoard(field);
+        });
+    }
+});
 
 async function loadOverviewData() {
-    const grid = document.getElementById('overviewCardsGrid');
+    const rowsContainer = document.getElementById('overviewBoardRows');
     const loading = document.getElementById('overviewLoading');
 
-    // Limpar cards existentes
-    grid.querySelectorAll('.overview-client-card').forEach(card => card.remove());
+    // Limpar rows existentes e resetar ordenacao
+    rowsContainer.querySelectorAll('.overview-board-row').forEach(r => r.remove());
+    overviewSortField = null;
+    overviewSortAsc = true;
+    document.querySelectorAll('.board-sort-icon').forEach(i => i.textContent = 'unfold_more');
+    document.querySelectorAll('.board-sort-col').forEach(c => c.classList.remove('text-white'));
 
     // Mostrar loading
     if (loading) {
@@ -1651,11 +1755,11 @@ async function loadOverviewData() {
         return;
     }
 
-    // Buscar status de todas as contas em uma única chamada
+    // FASE 1: Buscar status de todas as contas em batch
     const accountIds = clients.map(c => c.adAccountId).join(',');
+    const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
 
     try {
-        const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
         const response = await fetch(`${baseUrl}/.netlify/functions/meta-ads?action=account-status&accountIds=${encodeURIComponent(accountIds)}`);
         const result = await response.json();
 
@@ -1663,19 +1767,17 @@ async function loadOverviewData() {
             throw new Error(result.message || 'Erro ao buscar status das contas');
         }
 
-        // Mapear por accountId
         const statusMap = new Map();
         (result.accounts || []).forEach(account => {
             statusMap.set(account.accountId, account);
         });
 
-        // Esconder loading
         if (loading) loading.classList.add('hidden');
 
-        // Renderizar cards
         let activeCount = 0;
         let problemCount = 0;
 
+        // Renderizar linhas com status/saldo + placeholders nas metricas
         clients.forEach(client => {
             const formattedId = client.adAccountId.startsWith('act_')
                 ? client.adAccountId
@@ -1686,12 +1788,24 @@ async function loadOverviewData() {
             if (cardState.isActive) activeCount++;
             if (cardState.hasError) problemCount++;
 
-            const cardHTML = renderOverviewCard(client, statusData, cardState);
-            grid.insertAdjacentHTML('beforeend', cardHTML);
+            const rowHTML = renderOverviewRow(client, statusData, cardState);
+            rowsContainer.insertAdjacentHTML('beforeend', rowHTML);
         });
 
         updateOverviewSummary(clients.length, activeCount, problemCount);
         overviewDataCache = { clients, statusMap, timestamp: Date.now() };
+
+        // FASE 2: Buscar metricas de cada cliente em paralelo
+        const insightPromises = clients.map(client => {
+            return fetchOverviewInsights(client.adAccountId, baseUrl)
+                .then(metrics => updateRowMetrics(client.id, metrics))
+                .catch(err => {
+                    console.warn(`Insights error for ${client.name}:`, err);
+                    updateRowMetrics(client.id, null);
+                });
+        });
+
+        await Promise.allSettled(insightPromises);
 
     } catch (error) {
         console.error('Erro ao carregar visao geral:', error);
@@ -1705,6 +1819,100 @@ async function loadOverviewData() {
             `;
         }
     }
+}
+
+async function fetchOverviewInsights(adAccountId, baseUrl) {
+    const formattedId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+    let url = `${baseUrl}/.netlify/functions/meta-ads?adAccountId=${encodeURIComponent(formattedId)}`;
+
+    if (currentDateRange) {
+        const timeRange = JSON.stringify({ since: currentDateRange.start, until: currentDateRange.end });
+        url += `&timeRange=${encodeURIComponent(timeRange)}`;
+    } else {
+        const dateRange = getDateRangeForAPI();
+        if (dateRange.usePreset) {
+            url += `&datePreset=${dateRange.preset}`;
+        } else {
+            const timeRange = JSON.stringify({ since: dateRange.since, until: dateRange.until });
+            url += `&timeRange=${encodeURIComponent(timeRange)}`;
+        }
+    }
+
+    const response = await fetch(url);
+    const result = await response.json();
+
+    if (!response.ok || result.error || !result.data || !result.data.summary) {
+        return null;
+    }
+
+    return result.data.summary;
+}
+
+function updateRowMetrics(clientId, metrics) {
+    const row = document.querySelector(`.overview-board-row[data-client-id="${clientId}"]`);
+    const spendEl = document.getElementById(`row-spend-${clientId}`);
+    const leadsEl = document.getElementById(`row-leads-${clientId}`);
+    const cplEl = document.getElementById(`row-cpl-${clientId}`);
+
+    // Salvar valores nos data attributes do row para ordenacao
+    if (row) {
+        row.setAttribute('data-spend', metrics ? metrics.spend : 0);
+        row.setAttribute('data-leads', metrics ? metrics.leads : 0);
+        row.setAttribute('data-cpl', metrics ? metrics.cpl : 0);
+    }
+
+    if (!metrics) {
+        if (spendEl) spendEl.innerHTML = '<span class="text-sm text-slate-500">--</span>';
+        if (leadsEl) leadsEl.innerHTML = '<span class="text-sm text-slate-500">--</span>';
+        if (cplEl) cplEl.innerHTML = '<span class="text-sm text-slate-500">--</span>';
+        return;
+    }
+
+    if (spendEl) spendEl.innerHTML = `<span class="text-sm font-bold text-white">${formatCurrency(metrics.spend)}</span>`;
+    if (leadsEl) leadsEl.innerHTML = `<span class="text-sm font-bold text-white">${formatNumber(metrics.leads)}</span>`;
+    if (cplEl) cplEl.innerHTML = `<span class="text-sm font-bold ${metrics.cpl > 0 ? 'text-white' : 'text-slate-500'}">${metrics.cpl > 0 ? formatCurrency(metrics.cpl) : '--'}</span>`;
+}
+
+function sortOverviewBoard(field) {
+    const container = document.getElementById('overviewBoardRows');
+    const rows = Array.from(container.querySelectorAll('.overview-board-row'));
+    if (rows.length === 0) return;
+
+    // Alternar direcao
+    if (overviewSortField === field) {
+        overviewSortAsc = !overviewSortAsc;
+    } else {
+        overviewSortField = field;
+        overviewSortAsc = true;
+    }
+
+    // Atualizar icones visuais
+    document.querySelectorAll('.board-sort-col').forEach(col => {
+        const icon = col.querySelector('.board-sort-icon');
+        if (col.getAttribute('data-sort') === field) {
+            icon.textContent = overviewSortAsc ? 'arrow_upward' : 'arrow_downward';
+            col.classList.add('text-white');
+        } else {
+            icon.textContent = 'unfold_more';
+            col.classList.remove('text-white');
+        }
+    });
+
+    // Ordenar rows pelo data attribute
+    rows.sort((a, b) => {
+        let valA, valB;
+        if (field === 'name') {
+            valA = (a.getAttribute('data-name') || '').toLowerCase();
+            valB = (b.getAttribute('data-name') || '').toLowerCase();
+            return overviewSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+        valA = parseFloat(a.getAttribute('data-' + field) || '0');
+        valB = parseFloat(b.getAttribute('data-' + field) || '0');
+        return overviewSortAsc ? valA - valB : valB - valA;
+    });
+
+    // Reordenar no DOM
+    rows.forEach(row => container.appendChild(row));
 }
 
 function getClientCardState(statusData) {
@@ -1791,48 +1999,52 @@ function getClientCardState(statusData) {
     };
 }
 
-function renderOverviewCard(client, statusData, cardState) {
+function renderOverviewRow(client, statusData, cardState) {
     const isPrepay = statusData.is_prepay_account;
-    const pulseClass = cardState.pulseAnimation ? 'overview-card-pulse' : '';
-    const balanceColor = cardState.hasError && !cardState.isActive ? 'text-red-400' : 'text-white';
+    const pulseClass = cardState.pulseAnimation ? 'overview-row-pulse' : '';
 
-    // Montar seção inferior conforme tipo de conta
-    let footerLabel, footerValue;
+    // Calcular saldo para display e ordenacao
+    let balanceCents = 0;
+    let balanceDisplay;
     if (statusData.error) {
-        footerLabel = 'Saldo da Conta';
-        footerValue = '--';
+        balanceDisplay = '<span class="text-slate-500">--</span>';
     } else if (isPrepay) {
-        footerLabel = 'Saldo Pre-pago';
-        const remainingCents = getPrepaidRemainingCents(statusData);
-        footerValue = formatOverviewBalance(remainingCents, statusData.currency);
+        balanceCents = getPrepaidRemainingCents(statusData);
+        const balanceColor = balanceCents <= 0 ? 'text-red-400' : 'text-emerald-400';
+        balanceDisplay = `<span class="${balanceColor} font-bold">${formatOverviewBalance(balanceCents, statusData.currency)}</span>`;
     } else {
-        // Conta com cartão (pós-pago) — não tem saldo
-        footerLabel = 'Forma de Pagamento';
-        footerValue = `<span class="material-symbols-outlined text-2xl text-slate-400">credit_card</span>`;
+        balanceCents = 999999999; // pos-pago no topo quando ordena por saldo
+        balanceDisplay = '<span class="text-slate-400 flex items-center justify-end gap-1.5"><span class="material-symbols-outlined text-lg">credit_card</span><span class="text-xs font-medium">Cartao</span></span>';
     }
 
     return `
-        <div class="overview-client-card bg-surface-dark ${cardState.borderClass} border-2 rounded-xl sm:rounded-2xl p-4 sm:p-5 cursor-pointer transition-all hover:shadow-lg group ${pulseClass}"
+        <div class="overview-board-row grid grid-cols-[20px_1fr_120px_80px_110px_120px_110px] gap-x-5 items-center px-6 py-4 border-b border-border-dark/50 cursor-pointer hover:bg-white/[0.04] transition-colors group ${pulseClass}"
+             data-client-id="${client.id}" data-name="${client.name}" data-spend="0" data-leads="0" data-cpl="0" data-balance="${balanceCents}"
              onclick="navigateToClient('${client.id}')">
-            <div class="flex items-center gap-3 mb-4">
-                <div class="w-10 h-10 bg-${client.color}-500/10 rounded-lg flex items-center justify-center text-${client.color}-500 shrink-0">
-                    <span class="material-symbols-outlined">store</span>
-                </div>
-                <div class="min-w-0 flex-1">
-                    <p class="text-sm font-bold text-white truncate group-hover:text-primary transition-colors">${client.name}</p>
-                    <p class="text-[10px] text-slate-500 font-mono truncate">${client.adAccountId}</p>
-                </div>
-                <span class="material-symbols-outlined text-slate-600 group-hover:text-primary text-lg transition-colors">arrow_forward_ios</span>
+            <div class="flex items-center justify-center">
+                <span class="w-3 h-3 rounded-full ${cardState.dotColor} shrink-0"></span>
             </div>
-            <div class="flex items-center gap-2 mb-3">
-                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${cardState.labelClass}">
-                    <span class="w-1.5 h-1.5 rounded-full ${cardState.dotColor}"></span>
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 bg-${client.color}-500/15 rounded-xl flex items-center justify-center text-${client.color}-500 shrink-0">
+                    <span class="material-symbols-outlined text-xl">store</span>
+                </div>
+                <p class="text-[13px] font-bold text-white truncate group-hover:text-primary transition-colors">${client.name}</p>
+            </div>
+            <div class="text-right" id="row-spend-${client.id}">
+                <span class="inline-block w-20 h-5 bg-slate-700/30 rounded animate-pulse"></span>
+            </div>
+            <div class="text-right" id="row-leads-${client.id}">
+                <span class="inline-block w-10 h-5 bg-slate-700/30 rounded animate-pulse"></span>
+            </div>
+            <div class="text-right" id="row-cpl-${client.id}">
+                <span class="inline-block w-16 h-5 bg-slate-700/30 rounded animate-pulse"></span>
+            </div>
+            <div class="text-right text-[13px]">${balanceDisplay}</div>
+            <div class="flex justify-center">
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${cardState.labelClass}">
+                    <span class="w-2 h-2 rounded-full ${cardState.dotColor}"></span>
                     ${cardState.label}
                 </span>
-            </div>
-            <div class="pt-3 border-t border-border-dark/50">
-                <span class="text-[10px] text-slate-500 uppercase tracking-widest">${footerLabel}</span>
-                <p class="text-lg font-bold ${balanceColor} mt-0.5">${footerValue}</p>
             </div>
         </div>
     `;
@@ -1971,3 +2183,725 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// ==========================================
+// ANÁLISE DE CRIATIVOS
+// ==========================================
+
+let creativesDataCache = [];
+let campaignsDataCache = [];
+let analysisTab = null;
+let creativesOffset = 0;
+let creativesTotal = 0;
+let creativesCampaignFilter = null;
+let creativesCampaignName = null;
+
+// ---- Abas de análise ----
+
+function switchAnalysisTab(tab) {
+    if (analysisTab === tab && !creativesCampaignFilter) return;
+
+    analysisTab = tab;
+    creativesCampaignFilter = null;
+    creativesCampaignName = null;
+
+    // Atualizar visual das abas
+    const tabCampaigns = document.getElementById('tabCampaigns');
+    const tabCreatives = document.getElementById('tabCreatives');
+    tabCampaigns.className = `flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-md transition-colors ${tab === 'campaigns' ? 'bg-primary/10 text-white' : 'text-slate-400 hover:text-white'}`;
+    tabCreatives.className = `flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-md transition-colors ${tab === 'creatives' ? 'bg-primary/10 text-white' : 'text-slate-400 hover:text-white'}`;
+
+    // Mostrar seção
+    document.getElementById('analysisSection').classList.remove('hidden');
+
+    if (tab === 'campaigns') {
+        updateBreadcrumb([{ label: 'Campanhas' }]);
+        loadCampaignAnalysis();
+    } else {
+        updateBreadcrumb([{ label: 'Criativos' }]);
+        creativesOffset = 0;
+        loadCreatives();
+    }
+}
+
+function updateBreadcrumb(items) {
+    const bc = document.getElementById('analysisBreadcrumb');
+    bc.innerHTML = items.map((item, i) => {
+        const isLast = i === items.length - 1;
+        if (item.onClick && !isLast) {
+            return `<span class="text-slate-400 hover:text-white cursor-pointer transition-colors" onclick="${item.onClick}">${item.label}</span>
+                    <span class="material-symbols-outlined text-slate-600 text-sm">chevron_right</span>`;
+        }
+        return `<h3 class="font-bold text-white">${item.label}</h3>`;
+    }).join('');
+}
+
+function closeAnalysis() {
+    document.getElementById('analysisSection').classList.add('hidden');
+    analysisTab = null;
+    creativesCampaignFilter = null;
+    // Resetar visual das abas
+    document.getElementById('tabCampaigns').className = 'flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-md transition-colors text-slate-400 hover:text-white';
+    document.getElementById('tabCreatives').className = 'flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-md transition-colors text-slate-400 hover:text-white';
+}
+
+// ---- Análise de Campanhas ----
+
+async function loadCampaignAnalysis() {
+    if (!currentAdAccountId) return;
+
+    const loading = document.getElementById('analysisLoading');
+    const content = document.getElementById('analysisContent');
+    loading.classList.remove('hidden');
+    content.innerHTML = '';
+
+    try {
+        const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
+        let url = `${baseUrl}/.netlify/functions/meta-ads?adAccountId=${encodeURIComponent(currentAdAccountId)}&action=campaign-analysis`;
+        url += buildPeriodParam();
+
+        const response = await fetch(url);
+        const result = await response.json();
+
+        if (!response.ok || result.error) {
+            throw new Error(result.message || 'Erro ao buscar campanhas');
+        }
+
+        loading.classList.add('hidden');
+        campaignsDataCache = result.campaigns || [];
+        renderCampaignList(campaignsDataCache);
+
+    } catch (error) {
+        console.error('Erro ao carregar campanhas:', error);
+        loading.classList.add('hidden');
+        content.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-8 text-slate-500">
+                <span class="material-symbols-outlined text-4xl mb-2">error_outline</span>
+                <p class="text-sm">${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+function renderCampaignList(campaigns) {
+    const content = document.getElementById('analysisContent');
+
+    if (campaigns.length === 0) {
+        content.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-12 text-slate-500">
+                <span class="material-symbols-outlined text-5xl mb-3 opacity-50">campaign</span>
+                <p class="text-sm">Nenhuma campanha encontrada no período</p>
+            </div>
+        `;
+        return;
+    }
+
+    const totalSpend = campaigns.reduce((s, c) => s + c.metrics.spend, 0);
+    const totalLeads = campaigns.reduce((s, c) => s + c.metrics.leads, 0);
+    const avgCpl = totalLeads > 0 ? totalSpend / totalLeads : 0;
+    const activeCount = campaigns.filter(c => c.status === 'ACTIVE').length;
+
+    content.innerHTML = `
+        <div class="flex flex-wrap items-center gap-3 mb-5 text-xs text-slate-400">
+            <span class="font-semibold text-slate-300">${campaigns.length} campanhas</span>
+            <span class="w-px h-3.5 bg-slate-700"></span>
+            <span>${activeCount} ativas</span>
+            <span class="w-px h-3.5 bg-slate-700"></span>
+            <span>Investimento: <strong class="text-white">${formatCurrency(totalSpend)}</strong></span>
+            <span class="w-px h-3.5 bg-slate-700"></span>
+            <span>CPL médio: <strong class="text-white">${totalLeads > 0 ? formatCurrency(avgCpl) : '—'}</strong></span>
+        </div>
+        <div class="space-y-3">
+            ${campaigns.map(c => renderCampaignCard(c)).join('')}
+        </div>
+    `;
+}
+
+function renderCampaignCard(campaign) {
+    const { id, name, objective, status, metrics, createdTime, activeAdsCount, conversionType } = campaign;
+
+    const isActive = status === 'ACTIVE';
+    const statusDot = isActive ? 'bg-emerald-400' : 'bg-slate-500';
+
+    const objLabel = (objective === 'OUTCOME_LEADS' || objective === 'LEAD_GENERATION')
+        ? 'Leads' : 'Mensagens';
+    const objBadge = objLabel === 'Leads'
+        ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 leading-none">LEADS</span>'
+        : '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 leading-none">MENSAGENS</span>';
+
+    const activeDays = getActiveDays(createdTime);
+    const activeDaysText = activeDays !== null ? `${activeDays}d` : '—';
+    const frequency = metrics.reach > 0 ? (metrics.impressions / metrics.reach).toFixed(1) : '—';
+
+    const cplValue = metrics.leads > 0 ? formatCurrency(metrics.cpl) : '—';
+    const cplColor = metrics.leads > 0 ? 'text-white' : 'text-slate-500';
+    const ctrClass = classifyMetric('ctr', metrics.ctr);
+
+    return `
+        <div class="bg-background-dark border border-border-dark rounded-xl p-4 hover:border-slate-600 transition-colors cursor-pointer" onclick="viewCampaignCreatives('${id}', '${name.replace(/'/g, "\\'")}')">
+            <div class="flex items-start gap-3.5">
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1.5 flex-wrap">
+                        <span class="w-1.5 h-1.5 rounded-full ${statusDot} shrink-0"></span>
+                        ${objBadge}
+                        <span class="text-[10px] text-slate-500 shrink-0">
+                            <span class="material-symbols-outlined text-[11px] align-middle">schedule</span>
+                            ${activeDaysText}
+                        </span>
+                        <span class="text-[10px] text-slate-500 shrink-0">
+                            <span class="material-symbols-outlined text-[11px] align-middle">repeat</span>
+                            ${frequency}x
+                        </span>
+                        <span class="text-[10px] text-slate-500 shrink-0">
+                            <span class="material-symbols-outlined text-[11px] align-middle">photo_library</span>
+                            ${activeAdsCount} criativos
+                        </span>
+                    </div>
+                    <p class="text-[13px] font-semibold text-slate-200 leading-snug line-clamp-2 mb-2">${name}</p>
+                    <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                        <div>
+                            <span class="text-slate-500">Gasto</span>
+                            <span class="text-white font-semibold ml-1">${formatCurrency(metrics.spend)}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500">Leads</span>
+                            <span class="text-white font-semibold ml-1">${formatNumber(metrics.leads)}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500">Impr.</span>
+                            <span class="text-slate-300 font-medium ml-1">${formatNumber(metrics.impressions)}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500">CTR</span>
+                            <span class="font-semibold ml-1 ${ctrClass.colorClass}">${metrics.ctr.toFixed(2)}%</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="shrink-0 text-right pl-2">
+                    <span class="text-[10px] text-slate-500 block mb-0.5">CPL</span>
+                    <span class="text-lg font-bold ${cplColor} leading-none">${cplValue}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function viewCampaignCreatives(campaignId, campaignName) {
+    creativesCampaignFilter = campaignId;
+    creativesCampaignName = campaignName;
+    creativesOffset = 0;
+    updateBreadcrumb([
+        { label: 'Campanhas', onClick: 'backToCampaigns()' },
+        { label: campaignName }
+    ]);
+    loadCreatives();
+}
+
+function backToCampaigns() {
+    creativesCampaignFilter = null;
+    creativesCampaignName = null;
+    updateBreadcrumb([{ label: 'Campanhas' }]);
+    renderCampaignList(campaignsDataCache);
+}
+
+// ---- Análise de Criativos (com paginação) ----
+
+function buildPeriodParam() {
+    if (currentDateRange) {
+        const timeRange = JSON.stringify({ since: currentDateRange.start, until: currentDateRange.end });
+        return `&timeRange=${encodeURIComponent(timeRange)}`;
+    } else {
+        const dateRange = getDateRangeForAPI();
+        if (dateRange.usePreset) {
+            return `&datePreset=${dateRange.preset}`;
+        } else {
+            const timeRange = JSON.stringify({ since: dateRange.since, until: dateRange.until });
+            return `&timeRange=${encodeURIComponent(timeRange)}`;
+        }
+    }
+}
+
+async function loadCreatives() {
+    if (!currentAdAccountId) return;
+
+    const loading = document.getElementById('analysisLoading');
+    const content = document.getElementById('analysisContent');
+
+    if (creativesOffset === 0) {
+        loading.classList.remove('hidden');
+        content.innerHTML = '';
+    }
+
+    try {
+        const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
+        let url = `${baseUrl}/.netlify/functions/meta-ads?adAccountId=${encodeURIComponent(currentAdAccountId)}&action=ad-creatives`;
+        url += `&limit=10&offset=${creativesOffset}`;
+
+        if (creativesCampaignFilter) {
+            url += `&campaignId=${encodeURIComponent(creativesCampaignFilter)}`;
+        } else {
+            const campaignFilter = document.getElementById('campaignFilter');
+            const adsetFilter = document.getElementById('adsetFilter');
+            if (campaignFilter?.value) url += `&campaignId=${encodeURIComponent(campaignFilter.value)}`;
+            if (adsetFilter?.value) url += `&adsetId=${encodeURIComponent(adsetFilter.value)}`;
+        }
+
+        url += buildPeriodParam();
+
+        const response = await fetch(url);
+        const result = await response.json();
+
+        if (!response.ok || result.error) {
+            throw new Error(result.message || 'Erro ao buscar criativos');
+        }
+
+        loading.classList.add('hidden');
+        const newCreatives = result.creatives || [];
+        creativesTotal = result.total || newCreatives.length;
+        const hasMore = result.hasMore || false;
+
+        if (creativesOffset === 0) {
+            creativesDataCache = newCreatives;
+        } else {
+            creativesDataCache = [...creativesDataCache, ...newCreatives];
+        }
+
+        renderCreatives(creativesDataCache, creativesTotal, hasMore);
+
+    } catch (error) {
+        console.error('Erro ao carregar criativos:', error);
+        loading.classList.add('hidden');
+        if (creativesOffset === 0) {
+            content.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-8 text-slate-500">
+                    <span class="material-symbols-outlined text-4xl mb-2">error_outline</span>
+                    <p class="text-sm">${error.message}</p>
+                </div>
+            `;
+        }
+    }
+}
+
+function loadMoreCreatives() {
+    creativesOffset += 10;
+    loadCreatives();
+}
+
+function renderCreatives(creatives, total, hasMore) {
+    const content = document.getElementById('analysisContent');
+
+    if (creatives.length === 0) {
+        content.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-12 text-slate-500">
+                <span class="material-symbols-outlined text-5xl mb-3 opacity-50">image_not_supported</span>
+                <p class="text-sm">Nenhum criativo encontrado no período</p>
+            </div>
+        `;
+        return;
+    }
+
+    const videoCount = creatives.filter(c => c.isVideo).length;
+    const imageCount = creatives.length - videoCount;
+
+    content.innerHTML = `
+        <div class="flex flex-wrap items-center gap-3 mb-5 text-xs text-slate-400">
+            <span class="font-semibold text-slate-300">Exibindo ${creatives.length} de ${total} criativos</span>
+            <span class="w-px h-3.5 bg-slate-700"></span>
+            <span>${videoCount} vídeos</span>
+            <span class="w-px h-3.5 bg-slate-700"></span>
+            <span>${imageCount} imagens</span>
+        </div>
+        <div class="space-y-3">
+            ${creatives.map(creative => renderCreativeCard(creative)).join('')}
+        </div>
+        ${hasMore ? `
+            <div class="flex justify-center mt-4">
+                <button onclick="loadMoreCreatives()" class="flex items-center gap-2 px-5 py-2.5 bg-background-dark border border-border-dark text-slate-300 rounded-lg text-sm font-semibold hover:bg-slate-800 hover:text-white hover:border-slate-600 transition-colors">
+                    <span class="material-symbols-outlined text-base">expand_more</span>
+                    Carregar mais
+                </button>
+            </div>
+        ` : ''}
+    `;
+}
+
+function getActiveDays(createdTime) {
+    if (!createdTime) return null;
+    const created = new Date(createdTime);
+    const now = new Date();
+    const diffMs = now - created;
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+function renderCreativeCard(creative) {
+    const { name, isVideo, thumbnailUrl, metrics, videoMetrics, status, createdTime } = creative;
+
+    // Dias ativo
+    const activeDays = getActiveDays(createdTime);
+    const activeDaysText = activeDays !== null ? `${activeDays}d` : '—';
+
+    // Status
+    const isActive = status === 'ACTIVE';
+    const statusDot = isActive
+        ? 'bg-emerald-400'
+        : 'bg-slate-500';
+    const statusText = isActive ? 'Ativo' : 'Inativo';
+
+    // Tipo badge
+    const typeBadge = isVideo
+        ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 leading-none">VIDEO</span>'
+        : '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 leading-none">IMG</span>';
+
+    // CPL destaque
+    const cplValue = metrics.leads > 0 ? formatCurrency(metrics.cpl) : '—';
+    const cplColor = metrics.leads > 0 ? 'text-white' : 'text-slate-500';
+
+    // Thumbnail compacto
+    const thumb = thumbnailUrl
+        ? `<img src="${thumbnailUrl}" alt="" class="w-14 h-14 sm:w-16 sm:h-16 object-cover rounded-lg shrink-0">`
+        : `<div class="w-14 h-14 sm:w-16 sm:h-16 bg-slate-800/60 rounded-lg flex items-center justify-center shrink-0">
+             <span class="material-symbols-outlined text-xl text-slate-600">${isVideo ? 'videocam' : 'image'}</span>
+           </div>`;
+
+    // Métricas de vídeo (barra horizontal com badges de classificação)
+    let videoSection = '';
+    if (isVideo && videoMetrics) {
+        const hookClass = classifyMetric('hookRate', videoMetrics.hookRate);
+        const retentionClass = classifyMetric('retention', videoMetrics.retention);
+        const holdClass = classifyMetric('holdRate', videoMetrics.holdRate);
+        const avgTimeClass = classifyMetric('avgWatchTime', videoMetrics.avgWatchTime);
+
+        videoSection = `
+            <div class="mt-2.5 pt-2.5 border-t border-slate-800/80">
+                <div class="flex flex-wrap gap-x-5 gap-y-1.5 text-[11px]">
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-slate-500">Hook</span>
+                        <span class="font-bold ${hookClass.colorClass}">${videoMetrics.hookRate.toFixed(1)}%</span>
+                        <span class="text-[9px] font-bold ${hookClass.badgeBg} px-1 py-px rounded leading-none">${hookClass.label}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-slate-500">Retenção</span>
+                        <span class="font-bold ${retentionClass.colorClass}">${videoMetrics.retention.toFixed(1)}%</span>
+                        <span class="text-[9px] font-bold ${retentionClass.badgeBg} px-1 py-px rounded leading-none">${retentionClass.label}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-slate-500">Tempo</span>
+                        <span class="font-bold ${avgTimeClass.colorClass}">${videoMetrics.avgWatchTime.toFixed(1)}s</span>
+                        <span class="text-[9px] font-bold ${avgTimeClass.badgeBg} px-1 py-px rounded leading-none">${avgTimeClass.label}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-slate-500">Hold</span>
+                        <span class="font-bold ${holdClass.colorClass}">${videoMetrics.holdRate.toFixed(1)}%</span>
+                        <span class="text-[9px] font-bold ${holdClass.badgeBg} px-1 py-px rounded leading-none">${holdClass.label}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    const ctrClass = classifyMetric('ctr', metrics.ctr);
+
+    return `
+        <div class="bg-background-dark border border-border-dark rounded-xl p-4 hover:border-slate-600 transition-colors cursor-pointer" onclick="openCreativeModal('${creative.id}')">
+            <!-- Linha principal: thumb + nome + métricas -->
+            <div class="flex items-start gap-3.5">
+                ${thumb}
+                <div class="flex-1 min-w-0">
+                    <!-- Nome + badges -->
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full ${statusDot} shrink-0"></span>
+                        ${typeBadge}
+                        <span class="text-[10px] text-slate-500 shrink-0">
+                            <span class="material-symbols-outlined text-[11px] align-middle">schedule</span>
+                            ${activeDaysText}
+                        </span>
+                        <span class="text-[10px] text-slate-500 shrink-0">
+                            <span class="material-symbols-outlined text-[11px] align-middle">repeat</span>
+                            ${metrics.reach > 0 ? (metrics.impressions / metrics.reach).toFixed(1) : '—'}x
+                        </span>
+                    </div>
+                    <p class="text-[13px] font-semibold text-slate-200 leading-snug line-clamp-2 mb-2">${name}</p>
+
+                    <!-- Métricas em linha compacta -->
+                    <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                        <div>
+                            <span class="text-slate-500">Gasto</span>
+                            <span class="text-white font-semibold ml-1">${formatCurrency(metrics.spend)}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500">Leads</span>
+                            <span class="text-white font-semibold ml-1">${formatNumber(metrics.leads)}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500">Impr.</span>
+                            <span class="text-slate-300 font-medium ml-1">${formatNumber(metrics.impressions)}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500">Cliques</span>
+                            <span class="text-slate-300 font-medium ml-1">${formatNumber(metrics.linkClicks)}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500">CTR</span>
+                            <span class="font-semibold ml-1 ${ctrClass.colorClass}">${metrics.ctr.toFixed(2)}%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CPL em destaque -->
+                <div class="shrink-0 text-right pl-2">
+                    <span class="text-[10px] text-slate-500 block mb-0.5">CPL</span>
+                    <span class="text-lg font-bold ${cplColor} leading-none">${cplValue}</span>
+                </div>
+            </div>
+
+            ${videoSection}
+        </div>
+    `;
+}
+
+function classifyMetric(indicator, value) {
+    const thresholds = {
+        hookRate: { bad: 17, ok: 35 },
+        retention: { bad: 15, ok: 30 },
+        holdRate: { bad: 60, ok: 75 },
+        ctr: { bad: 0.7, ok: 1.5 },
+        avgWatchTime: { bad: 2, ok: 4 }
+    };
+
+    const t = thresholds[indicator];
+    if (!t) return { label: '', colorClass: 'text-white', badgeBg: '' };
+
+    if (value < t.bad) {
+        return { label: 'Ruim', colorClass: 'text-red-400', badgeBg: 'bg-red-400/10 text-red-400' };
+    } else if (value <= t.ok) {
+        return { label: 'Razoável', colorClass: 'text-yellow-400', badgeBg: 'bg-yellow-400/10 text-yellow-400' };
+    } else {
+        return { label: 'Bom', colorClass: 'text-emerald-400', badgeBg: 'bg-emerald-400/10 text-emerald-400' };
+    }
+}
+
+// ==========================================
+// MODAL DE DETALHES DO CRIATIVO
+// ==========================================
+
+async function openCreativeModal(adId) {
+    const creative = creativesDataCache.find(c => c.id === adId);
+    if (!creative) return;
+
+    const modal = document.getElementById('creativeDetailModal');
+    modal.classList.remove('hidden');
+    document.body.classList.add('overflow-hidden');
+
+    // Preencher header
+    const thumbEl = document.getElementById('creativeModalThumb');
+    thumbEl.innerHTML = creative.thumbnailUrl
+        ? `<img src="${creative.thumbnailUrl}" alt="" class="w-full h-full object-cover">`
+        : `<div class="w-full h-full bg-slate-800 flex items-center justify-center"><span class="material-symbols-outlined text-sm text-slate-600">${creative.isVideo ? 'videocam' : 'image'}</span></div>`;
+
+    document.getElementById('creativeModalName').textContent = creative.name;
+
+    const activeDays = getActiveDays(creative.createdTime);
+    const typeLbl = creative.isVideo ? 'Vídeo' : 'Imagem';
+    const statusLbl = creative.status === 'ACTIVE' ? 'Ativo' : 'Inativo';
+    const frequency = creative.metrics.reach > 0 ? (creative.metrics.impressions / creative.metrics.reach).toFixed(1) : '—';
+    document.getElementById('creativeModalMeta').textContent = `${typeLbl} · ${statusLbl}${activeDays !== null ? ` · ${activeDays} dias` : ''} · Freq. ${frequency}`;
+
+    // KPIs
+    const m = creative.metrics;
+    const cplVal = m.leads > 0 ? formatCurrency(m.cpl) : '—';
+    document.getElementById('creativeModalKpis').innerHTML = `
+        <div class="bg-background-dark rounded-lg p-3 text-center">
+            <p class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Gasto</p>
+            <p class="text-sm font-bold text-white">${formatCurrency(m.spend)}</p>
+        </div>
+        <div class="bg-background-dark rounded-lg p-3 text-center">
+            <p class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Leads</p>
+            <p class="text-sm font-bold text-white">${formatNumber(m.leads)}</p>
+        </div>
+        <div class="bg-background-dark rounded-lg p-3 text-center border border-primary/30">
+            <p class="text-[10px] text-primary uppercase tracking-wider font-bold mb-1">CPL</p>
+            <p class="text-lg font-bold text-white">${cplVal}</p>
+        </div>
+        <div class="bg-background-dark rounded-lg p-3 text-center">
+            <p class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">CTR</p>
+            <p class="text-sm font-bold ${classifyMetric('ctr', m.ctr).colorClass}">${m.ctr.toFixed(2)}%</p>
+        </div>
+    `;
+
+    // Loading nos gráficos
+    const chartsContainer = document.getElementById('creativeModalCharts');
+    chartsContainer.innerHTML = `
+        <div class="flex items-center justify-center py-12">
+            <div class="w-8 h-8 border-[3px] border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+        </div>
+    `;
+
+    // Buscar dados diários
+    try {
+        const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
+        let url = `${baseUrl}/.netlify/functions/meta-ads?adAccountId=${encodeURIComponent(currentAdAccountId)}&action=ad-daily&adId=${encodeURIComponent(adId)}`;
+
+        if (currentDateRange) {
+            const timeRange = JSON.stringify({ since: currentDateRange.start, until: currentDateRange.end });
+            url += `&timeRange=${encodeURIComponent(timeRange)}`;
+        } else {
+            const dateRange = getDateRangeForAPI();
+            if (dateRange.usePreset) {
+                url += `&datePreset=${dateRange.preset}`;
+            } else {
+                const timeRange = JSON.stringify({ since: dateRange.since, until: dateRange.until });
+                url += `&timeRange=${encodeURIComponent(timeRange)}`;
+            }
+        }
+
+        const response = await fetch(url);
+        const result = await response.json();
+
+        if (!response.ok || result.error) {
+            throw new Error(result.message || 'Erro ao buscar dados diários');
+        }
+
+        renderCreativeModalCharts(result.daily || [], creative);
+
+    } catch (error) {
+        chartsContainer.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-8 text-slate-500">
+                <span class="material-symbols-outlined text-3xl mb-2">error_outline</span>
+                <p class="text-xs">${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+function closeCreativeModal() {
+    const modal = document.getElementById('creativeDetailModal');
+    modal.classList.add('hidden');
+    document.body.classList.remove('overflow-hidden');
+}
+
+function renderCreativeModalCharts(daily, creative) {
+    const container = document.getElementById('creativeModalCharts');
+
+    if (daily.length === 0) {
+        container.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-8 text-slate-500">
+                <span class="material-symbols-outlined text-3xl mb-2">show_chart</span>
+                <p class="text-xs">Sem dados diários no período</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Definir métricas a exibir
+    const charts = [
+        { key: 'leads', label: 'Leads', format: 'number', color: '#0bda5b' },
+        { key: 'cpl', label: 'CPL', format: 'currency', color: '#f59e0b' },
+        { key: 'impressions', label: 'Impressões', format: 'number', color: '#8b5cf6' },
+        { key: 'ctr', label: 'CTR (%)', format: 'percent', color: '#ec4899' }
+    ];
+
+    container.innerHTML = `
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            ${charts.map(chart => {
+                const values = daily.map(d => d[chart.key] || 0);
+                const hasData = values.some(v => v > 0);
+                if (!hasData) {
+                    return `
+                        <div class="bg-background-dark rounded-xl p-4 border border-border-dark/50">
+                            <p class="text-xs font-semibold text-slate-400 mb-3">${chart.label}</p>
+                            <div class="flex items-center justify-center h-[120px] text-slate-600 text-xs">Sem dados</div>
+                        </div>
+                    `;
+                }
+                const svg = buildMiniChart(daily, chart.key, chart.color, chart.format);
+                return `
+                    <div class="bg-background-dark rounded-xl p-4 border border-border-dark/50">
+                        <p class="text-xs font-semibold text-slate-400 mb-3">${chart.label}</p>
+                        <div class="w-full">${svg}</div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function buildMiniChart(daily, key, color, format) {
+    const values = daily.map(d => d[key] || 0);
+    const dates = daily.map(d => d.date);
+
+    const W = 380, H = 140;
+    const padTop = 15, padRight = 10, padBottom = 25, padLeft = 45;
+    const chartW = W - padLeft - padRight;
+    const chartH = H - padTop - padBottom;
+
+    const rawMax = Math.max(...values);
+    const rawMin = Math.min(...values);
+    const ticks = calcNiceYTicks(rawMin, rawMax, 4);
+    const yMin = ticks[0];
+    const yMax = ticks[ticks.length - 1];
+    const yRange = yMax - yMin || 1;
+
+    // Formatter
+    const fmtAxis = format === 'currency' ? formatAxisCurrency
+        : format === 'percent' ? (v) => v.toFixed(1) + '%'
+        : formatAxisNumber;
+
+    // Pontos
+    const points = values.map((v, i) => ({
+        x: padLeft + (values.length === 1 ? chartW / 2 : (i / (values.length - 1)) * chartW),
+        y: padTop + chartH - ((v - yMin) / yRange) * chartH
+    }));
+
+    // Grid + Y labels
+    let gridSvg = '';
+    ticks.forEach(tick => {
+        const y = padTop + chartH - ((tick - yMin) / yRange) * chartH;
+        gridSvg += `<line x1="${padLeft}" y1="${y}" x2="${W - padRight}" y2="${y}" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>`;
+        gridSvg += `<text x="${padLeft - 6}" y="${y + 3}" text-anchor="end" fill="#64748b" font-size="9" font-family="Inter,sans-serif">${fmtAxis(tick)}</text>`;
+    });
+
+    // X labels (first, mid, last)
+    const dateIndices = values.length <= 3
+        ? values.map((_, i) => i)
+        : [0, Math.floor(values.length / 2), values.length - 1];
+    let dateSvg = '';
+    dateIndices.forEach(i => {
+        const d = new Date(dates[i] + 'T00:00:00');
+        const label = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '');
+        dateSvg += `<text x="${points[i].x}" y="${H - 4}" text-anchor="middle" fill="#64748b" font-size="9" font-family="Inter,sans-serif">${label}</text>`;
+    });
+
+    // Path
+    const path = points.length === 1
+        ? ''
+        : buildSmoothPath(points);
+
+    // Area
+    const areaPath = points.length < 2 ? '' :
+        `${path} L${points[points.length - 1].x},${padTop + chartH} L${points[0].x},${padTop + chartH} Z`;
+
+    // Dots
+    let dotsSvg = '';
+    points.forEach((p, i) => {
+        dotsSvg += `<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="${color}" opacity="0.8"/>`;
+    });
+
+    const gradId = `miniGrad_${key}_${Math.random().toString(36).slice(2, 7)}`;
+
+    return `
+        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" class="w-full" style="height:140px">
+            <defs>
+                <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="${color}" stop-opacity="0.2"/>
+                    <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+                </linearGradient>
+            </defs>
+            ${gridSvg}
+            ${areaPath ? `<path d="${areaPath}" fill="url(#${gradId})"/>` : ''}
+            ${path ? `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` : ''}
+            ${points.length === 1 ? `<circle cx="${points[0].x}" cy="${points[0].y}" r="4" fill="${color}"/>` : ''}
+            ${dotsSvg}
+            ${dateSvg}
+        </svg>
+    `;
+}

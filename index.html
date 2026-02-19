@@ -177,6 +177,11 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-2 shrink-0">
+                    <button onclick="openDateFilterModal()" class="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 bg-surface-dark border border-border-dark rounded-lg text-xs sm:text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors">
+                        <span class="material-symbols-outlined text-base">calendar_today</span>
+                        <span id="overviewDateLabel" class="hidden sm:inline">Ultimos 7 dias</span>
+                        <span class="material-symbols-outlined text-base text-slate-500">expand_more</span>
+                    </button>
                     <button onclick="loadOverviewData()" class="p-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors" title="Atualizar dados">
                         <span class="material-symbols-outlined text-xl">refresh</span>
                     </button>
@@ -309,11 +314,28 @@
             </div>
         </div>
 
-        <!-- Grid de Cards dos Clientes -->
-        <div id="overviewCardsGrid" class="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-            <div id="overviewLoading" class="col-span-full flex flex-col items-center justify-center py-16 text-slate-600">
-                <span class="material-symbols-outlined text-5xl sm:text-6xl mb-3 opacity-50">grid_view</span>
-                <span class="text-sm">Selecione Atualizar para carregar os dados</span>
+        <!-- Painel de Clientes (Airport Board) -->
+        <div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl overflow-hidden">
+            <div class="overflow-x-auto">
+                <div id="overviewBoard" class="min-w-[780px]">
+                    <!-- Header Row -->
+                    <div id="overviewBoardHeader" class="grid grid-cols-[20px_1fr_120px_80px_110px_120px_110px] gap-x-5 px-6 py-3.5 border-b-2 border-slate-700 text-[11px] uppercase tracking-wider text-slate-400 font-bold bg-background-dark">
+                        <div></div>
+                        <div class="board-sort-col cursor-pointer select-none flex items-center gap-1.5" data-sort="name">Cliente <span class="material-symbols-outlined text-base leading-none board-sort-icon">unfold_more</span></div>
+                        <div class="board-sort-col cursor-pointer select-none flex items-center justify-end gap-1.5" data-sort="spend">Investido <span class="material-symbols-outlined text-base leading-none board-sort-icon">unfold_more</span></div>
+                        <div class="board-sort-col cursor-pointer select-none flex items-center justify-end gap-1.5" data-sort="leads">Leads <span class="material-symbols-outlined text-base leading-none board-sort-icon">unfold_more</span></div>
+                        <div class="board-sort-col cursor-pointer select-none flex items-center justify-end gap-1.5" data-sort="cpl">CPL <span class="material-symbols-outlined text-base leading-none board-sort-icon">unfold_more</span></div>
+                        <div class="board-sort-col cursor-pointer select-none flex items-center justify-end gap-1.5" data-sort="balance">Saldo <span class="material-symbols-outlined text-base leading-none board-sort-icon">unfold_more</span></div>
+                        <div class="text-center">Status</div>
+                    </div>
+                    <!-- Data Rows -->
+                    <div id="overviewBoardRows">
+                        <div id="overviewLoading" class="flex flex-col items-center justify-center py-16 text-slate-600">
+                            <span class="material-symbols-outlined text-5xl sm:text-6xl mb-3 opacity-50">grid_view</span>
+                            <span class="text-sm">Selecione Atualizar para carregar os dados</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -415,6 +437,36 @@
                 </div>
             </div>
             <div id="chartLabels" class="hidden"></div>
+
+            <!-- Barra de Abas: Campanhas / Criativos -->
+            <div id="analysisTabBar" class="hidden mt-6">
+                <div class="flex gap-1 p-1 bg-surface-dark border border-border-dark rounded-lg w-fit mx-auto">
+                    <button id="tabCampaigns" onclick="switchAnalysisTab('campaigns')" class="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-md transition-colors text-slate-400 hover:text-white">
+                        <span class="material-symbols-outlined text-base">campaign</span>
+                        Campanhas
+                    </button>
+                    <button id="tabCreatives" onclick="switchAnalysisTab('creatives')" class="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-md transition-colors text-slate-400 hover:text-white">
+                        <span class="material-symbols-outlined text-base">ads_click</span>
+                        Criativos
+                    </button>
+                </div>
+            </div>
+
+            <!-- Container de Análise -->
+            <div id="analysisSection" class="hidden mt-4">
+                <div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 overflow-hidden">
+                    <div id="analysisHeader" class="flex items-center justify-between mb-4">
+                        <div id="analysisBreadcrumb" class="flex items-center gap-2 text-sm"></div>
+                        <button onclick="closeAnalysis()" class="text-slate-400 hover:text-white transition-colors">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+                    <div id="analysisLoading" class="hidden flex items-center justify-center py-8">
+                        <div class="w-8 h-8 border-[3px] border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+                    </div>
+                    <div id="analysisContent"></div>
+                </div>
+            </div>
         </div>
 
         <!-- Footer -->
@@ -741,6 +793,53 @@
                             >
                         </div>
                     </div>
+                    <!-- Faixas de CPL -->
+                    <div class="border border-border-dark rounded-lg overflow-hidden">
+                        <button type="button" onclick="toggleCplBands()" class="w-full flex items-center justify-between px-3 py-2.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-surface-dark transition-colors">
+                            <span class="flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm">tune</span>
+                                Faixas de CPL (classificacao)
+                            </span>
+                            <span class="material-symbols-outlined text-sm transition-transform" id="cplBandsArrow">expand_more</span>
+                        </button>
+                        <div id="cplBandsSection" class="hidden px-3 pb-3 space-y-3">
+                            <p class="text-[11px] text-slate-500">Defina os limites de CPL para classificar o desempenho deste cliente.</p>
+                            <div class="grid grid-cols-3 gap-3">
+                                <div>
+                                    <label class="flex items-center gap-1 text-[11px] font-medium text-emerald-400 mb-1">
+                                        <span class="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
+                                        Excelente ate (R$)
+                                    </label>
+                                    <input type="number" id="cplExcellent" step="0.01" min="0"
+                                        class="w-full bg-surface-dark border border-border-dark text-white rounded-lg py-2 px-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
+                                        placeholder="Ex: 15">
+                                </div>
+                                <div>
+                                    <label class="flex items-center gap-1 text-[11px] font-medium text-blue-400 mb-1">
+                                        <span class="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                                        Saudavel ate (R$)
+                                    </label>
+                                    <input type="number" id="cplHealthy" step="0.01" min="0"
+                                        class="w-full bg-surface-dark border border-border-dark text-white rounded-lg py-2 px-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                        placeholder="Ex: 25">
+                                </div>
+                                <div>
+                                    <label class="flex items-center gap-1 text-[11px] font-medium text-amber-400 mb-1">
+                                        <span class="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>
+                                        Atencao ate (R$)
+                                    </label>
+                                    <input type="number" id="cplWarning" step="0.01" min="0"
+                                        class="w-full bg-surface-dark border border-border-dark text-white rounded-lg py-2 px-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                                        placeholder="Ex: 40">
+                                </div>
+                            </div>
+                            <p class="text-[11px] text-red-400/70 flex items-center gap-1">
+                                <span class="w-1.5 h-1.5 bg-red-400 rounded-full"></span>
+                                Critico: acima do valor de Atencao
+                            </p>
+                        </div>
+                    </div>
+
                     <div class="flex justify-end">
                         <button
                             type="submit"
@@ -784,6 +883,34 @@
                 <button onclick="closeClientsModal()" class="py-2 px-4 bg-surface-dark border border-border-dark text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors">
                     Fechar
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Detalhes do Criativo -->
+<div id="creativeDetailModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4" onclick="if(event.target===this)closeCreativeModal()">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+    <div class="relative bg-surface-dark border border-border-dark rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto hide-scrollbar">
+        <!-- Header -->
+        <div class="sticky top-0 z-10 bg-surface-dark border-b border-border-dark px-5 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3 min-w-0">
+                <div id="creativeModalThumb" class="w-10 h-10 rounded-lg overflow-hidden shrink-0"></div>
+                <div class="min-w-0">
+                    <p id="creativeModalName" class="text-sm font-bold text-white truncate"></p>
+                    <p id="creativeModalMeta" class="text-[11px] text-slate-400"></p>
+                </div>
+            </div>
+            <button onclick="closeCreativeModal()" class="text-slate-400 hover:text-white transition-colors shrink-0 ml-3">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <!-- KPIs resumo -->
+        <div id="creativeModalKpis" class="grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 py-4 border-b border-border-dark/50"></div>
+        <!-- Gráficos -->
+        <div id="creativeModalCharts" class="px-5 py-4 space-y-5">
+            <div class="flex items-center justify-center py-12">
+                <div class="w-8 h-8 border-[3px] border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
             </div>
         </div>
     </div>
