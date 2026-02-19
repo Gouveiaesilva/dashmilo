@@ -2952,6 +2952,10 @@ function renderAnalystReport(diagnostics, cplTargets, campaigns) {
                 <span class="material-symbols-outlined text-primary text-xl">psychology</span>
                 <h3 class="text-base font-bold text-white">Diagnostico do Periodo</h3>
                 <span class="text-xs text-slate-500">${campaigns.length} campanhas analisadas</span>
+                <button onclick="generateAnalystPDF()" class="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-xs font-semibold transition-colors">
+                    <span class="material-symbols-outlined text-sm">picture_as_pdf</span>
+                    Gerar PDF
+                </button>
             </div>
             <div class="flex flex-wrap gap-2 mb-4">
                 <span class="text-xs px-2 py-1 rounded bg-surface-dark text-slate-400">Investimento: <strong class="text-white">${formatCurrency(totalSpend)}</strong></span>

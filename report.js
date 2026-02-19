@@ -1063,3 +1063,291 @@ function fillPeriodDays(dailyData, sinceStr, untilStr) {
 
     return filled;
 }
+
+// ==========================================
+// PDF DO AGENTE ANALISTA
+// ==========================================
+
+async function generateAnalystPDF() {
+    // Validar dados disponíveis
+    if (!campaignsDataCache || campaignsDataCache.length === 0) {
+        showToast('Nenhum dado de campanha disponivel para gerar o PDF.');
+        return;
+    }
+
+    var campaigns = campaignsDataCache;
+    var cplTargets = getCurrentClientCplTargets();
+    var diagnostics = runAnalysisEngine(campaigns, cplTargets);
+
+    // Obter nome do cliente
+    var clientFilter = document.getElementById('clientFilter');
+    var clientName = clientFilter ? clientFilter.options[clientFilter.selectedIndex].textContent : 'Cliente';
+
+    // Carregar logo
+    var logoData = await loadLogoAsBase64();
+
+    var jsPDF = window.jspdf.jsPDF;
+    var doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    var colors = {
+        primary: [19, 127, 236],
+        dark: [15, 23, 42],
+        text: [30, 41, 59],
+        textLight: [100, 116, 139],
+        green: [16, 185, 129],
+        red: [239, 68, 68],
+        amber: [245, 158, 11],
+        blue: [59, 130, 246],
+        bgLight: [248, 250, 252],
+        border: [226, 232, 240],
+        white: [255, 255, 255]
+    };
+
+    var severityColors = {
+        critical: { main: [239, 68, 68], bg: [254, 242, 242] },
+        warning: { main: [245, 158, 11], bg: [255, 251, 235] },
+        info: { main: [59, 130, 246], bg: [239, 246, 255] },
+        success: { main: [16, 185, 129], bg: [236, 253, 245] }
+    };
+
+    var severityLabels = {
+        critical: 'CRITICO',
+        warning: 'ATENCAO',
+        info: 'INFO',
+        success: 'SAUDAVEL'
+    };
+
+    var y = 15;
+
+    // === HEADER ===
+    doc.setFillColor.apply(doc, colors.primary);
+    doc.rect(0, 0, 210, 3, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor.apply(doc, colors.dark);
+    doc.text('Diagnostico de Campanhas', 20, y + 3);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor.apply(doc, colors.textLight);
+    doc.text('Agente Analista - Meta Ads', 20, y + 9);
+
+    if (logoData) {
+        var ratio = logoData.width / logoData.height;
+        var logoH = 12;
+        var logoW = logoH * ratio;
+        if (logoW > 40) { logoW = 40; logoH = logoW / ratio; }
+        doc.addImage(logoData.dataUrl, 'JPEG', 190 - logoW, y - 3, logoW, logoH);
+    }
+
+    y += 18;
+
+    // Info cards
+    var today = new Date();
+    var dateStr = String(today.getDate()).padStart(2, '0') + '/' + String(today.getMonth() + 1).padStart(2, '0') + '/' + today.getFullYear();
+
+    var infoItems = [
+        { label: 'Cliente', value: clientName },
+        { label: 'Data da Analise', value: dateStr }
+    ];
+
+    var cardW = 82;
+    var cardGap = 6;
+
+    infoItems.forEach(function(item, i) {
+        var x = 20 + i * (cardW + cardGap);
+        doc.setFillColor.apply(doc, colors.bgLight);
+        doc.roundedRect(x, y, cardW, 14, 2, 2, 'F');
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor.apply(doc, colors.textLight);
+        doc.text(item.label, x + 3, y + 5);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor.apply(doc, colors.text);
+        doc.text(truncateText(doc, item.value, cardW - 6), x + 3, y + 11);
+    });
+
+    y += 20;
+
+    // Separador
+    doc.setDrawColor.apply(doc, colors.border);
+    doc.setLineWidth(0.3);
+    doc.line(20, y, 190, y);
+    y += 8;
+
+    // === RESUMO KPIs ===
+    var totalSpend = campaigns.reduce(function(s, c) { return s + c.metrics.spend; }, 0);
+    var totalLeads = campaigns.reduce(function(s, c) { return s + c.metrics.leads; }, 0);
+    var avgCpl = totalLeads > 0 ? totalSpend / totalLeads : 0;
+    var activeCount = campaigns.filter(function(c) { return c.status === 'ACTIVE'; }).length;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor.apply(doc, colors.dark);
+    doc.text('Resumo', 20, y);
+    y += 6;
+
+    var kpis = [
+        { label: 'Campanhas', value: String(campaigns.length) + ' (' + activeCount + ' ativas)' },
+        { label: 'Investimento', value: formatCurrency(totalSpend) },
+        { label: 'Leads', value: String(Math.round(totalLeads)) },
+        { label: 'CPL Medio', value: totalLeads > 0 ? formatCurrency(avgCpl) : '--' }
+    ];
+
+    var kpiW = 40;
+    var kpiGap = 3.3;
+    kpis.forEach(function(kpi, i) {
+        var x = 20 + i * (kpiW + kpiGap);
+        doc.setFillColor.apply(doc, colors.bgLight);
+        doc.roundedRect(x, y, kpiW, 18, 2, 2, 'F');
+        doc.setFillColor.apply(doc, colors.primary);
+        doc.rect(x, y + 2, 1.2, 14, 'F');
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor.apply(doc, colors.textLight);
+        doc.text(kpi.label, x + 4, y + 6);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor.apply(doc, colors.dark);
+        doc.text(kpi.value, x + 4, y + 14);
+    });
+
+    y += 26;
+
+    // === DIAGNOSTICOS ===
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor.apply(doc, colors.dark);
+    doc.text('Diagnosticos', 20, y);
+    y += 6;
+
+    if (diagnostics.length === 0) {
+        doc.setFillColor.apply(doc, colors.bgLight);
+        doc.roundedRect(20, y, 170, 16, 2, 2, 'F');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor.apply(doc, colors.textLight);
+        doc.text('Nenhum ponto de atencao encontrado. Todas as campanhas dentro dos parametros.', 28, y + 10);
+        y += 22;
+    } else {
+        diagnostics.forEach(function(d) {
+            var sColors = severityColors[d.severity] || severityColors.info;
+            var sLabel = severityLabels[d.severity] || 'INFO';
+
+            // Calcular altura do bloco
+            doc.setFontSize(7.5);
+            var descLines = doc.splitTextToSize(d.description, 152);
+            var actionLines = doc.splitTextToSize('Plano de acao: ' + d.action, 148);
+            var campaignNames = d.campaigns.map(function(c) { return c.name + ' (' + c.detail + ')'; }).join(' | ');
+            var campaignLines = doc.splitTextToSize(campaignNames, 152);
+
+            var blockH = 12 + (descLines.length * 3.5) + 4 + (campaignLines.length * 3.2) + 4 + (actionLines.length * 3.5) + 6;
+
+            // Nova pagina se necessario
+            if (y + blockH > 275) {
+                doc.addPage();
+                y = 20;
+            }
+
+            // Background
+            doc.setFillColor.apply(doc, sColors.bg);
+            doc.roundedRect(20, y, 170, blockH, 2, 2, 'F');
+
+            // Borda esquerda colorida
+            doc.setFillColor.apply(doc, sColors.main);
+            doc.rect(20, y + 2, 1.5, blockH - 4, 'F');
+
+            // Badge de severidade
+            doc.setFillColor.apply(doc, sColors.main);
+            var badgeW = doc.getTextWidth(sLabel) * 0.52 + 6;
+            doc.roundedRect(25, y + 3, badgeW, 5, 1, 1, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6);
+            doc.setTextColor.apply(doc, colors.white);
+            doc.text(sLabel, 28, y + 6.5);
+
+            // Titulo
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.setTextColor.apply(doc, colors.dark);
+            doc.text(d.title, 25 + badgeW + 3, y + 7);
+
+            var innerY = y + 12;
+
+            // Descricao
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.5);
+            doc.setTextColor.apply(doc, colors.text);
+            doc.text(descLines, 25, innerY);
+            innerY += descLines.length * 3.5 + 3;
+
+            // Campanhas afetadas
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.5);
+            doc.setTextColor.apply(doc, sColors.main);
+            doc.text(campaignLines, 25, innerY);
+            innerY += campaignLines.length * 3.2 + 3;
+
+            // Plano de acao
+            doc.setFillColor(245, 248, 252);
+            doc.roundedRect(24, innerY - 2, 162, actionLines.length * 3.5 + 5, 1.5, 1.5, 'F');
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7);
+            doc.setTextColor.apply(doc, colors.text);
+            doc.text(actionLines, 27, innerY + 2.5);
+
+            y += blockH + 3;
+        });
+    }
+
+    // === FAIXAS DE CPL (se configuradas) ===
+    if (cplTargets) {
+        if (y + 30 > 275) { doc.addPage(); y = 20; }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor.apply(doc, colors.dark);
+        doc.text('Faixas de CPL Configuradas', 20, y + 4);
+        y += 8;
+
+        var bands = [
+            { label: 'Excelente', value: 'CPL <= ' + formatCurrency(cplTargets.excellent), color: colors.green },
+            { label: 'Saudavel', value: 'CPL <= ' + formatCurrency(cplTargets.healthy), color: colors.blue },
+            { label: 'Atencao', value: 'CPL <= ' + formatCurrency(cplTargets.warning), color: colors.amber },
+            { label: 'Critico', value: 'CPL > ' + formatCurrency(cplTargets.warning), color: colors.red }
+        ];
+
+        bands.forEach(function(band) {
+            doc.setFillColor.apply(doc, band.color);
+            doc.circle(25, y + 1.5, 1.5, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.5);
+            doc.setTextColor.apply(doc, colors.dark);
+            doc.text(band.label, 29, y + 3);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor.apply(doc, colors.textLight);
+            doc.text(band.value, 55, y + 3);
+            y += 5.5;
+        });
+    }
+
+    // === FOOTER ===
+    var totalPages = doc.internal.getNumberOfPages();
+    for (var p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        drawPDFFooter(doc, p, totalPages, colors);
+    }
+
+    // Salvar
+    var clientSlug = clientName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    var dateSlug = today.getFullYear() + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
+    doc.save('diagnostico-' + clientSlug + '-' + dateSlug + '.pdf');
+
+    showToast('PDF do diagnostico gerado com sucesso!');
+}
