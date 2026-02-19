@@ -1345,9 +1345,10 @@ async function generateAnalystPDF() {
     }
 
     // Salvar
-    var clientSlug = clientName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    var dateSlug = today.getFullYear() + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
-    doc.save('diagnostico-' + clientSlug + '-' + dateSlug + '.pdf');
+    var clientSlug = clientName.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\u00C0-\u024F-]/g, '');
+    var periodLabel = (document.getElementById('dateFilterLabel') || {}).textContent || '';
+    var periodSlug = periodLabel.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\u00C0-\u024F-\/]/g, '');
+    doc.save('[ANALISE] ' + clientName + ' [' + periodLabel + '].pdf');
 
     showToast('PDF do diagnostico gerado com sucesso!');
 }
