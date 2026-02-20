@@ -145,12 +145,14 @@ header.scrolled {
    ========================================== */
 
 #passwordModal,
-#clientsModal {
+#clientsModal,
+#creativeDetailModal {
   animation: fadeIn 0.2s ease-out;
 }
 
 #passwordModal > div:last-child,
-#clientsModal > div:last-child {
+#clientsModal > div:last-child,
+#creativeDetailModal > div:last-child {
   animation: slideUp 0.3s ease-out;
 }
 
@@ -526,31 +528,116 @@ select option {
   }
 }
 
-.overview-card-pulse {
-  animation: pulseRedBorder 2s ease-in-out infinite;
+/* Airport Board - Row styles */
+.overview-board-row {
+  transition: background-color 0.2s ease;
 }
 
-/* Hover e transições dos cards */
-.overview-client-card {
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+.overview-board-row:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.025);
 }
 
 @media (hover: hover) {
-  .overview-client-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 12px 30px -8px rgba(0, 0, 0, 0.4);
-  }
-
-  .overview-client-card.overview-card-pulse:hover {
-    animation: none;
-    border-color: #ef4444;
-    box-shadow: 0 12px 30px -8px rgba(239, 68, 68, 0.2);
+  .overview-board-row:hover {
+    background-color: rgba(19, 127, 236, 0.06) !important;
   }
 }
 
+.overview-row-pulse {
+  border-left: 3px solid #ef4444;
+  animation: pulseRedBorder 2s ease-in-out infinite;
+}
+
+/* Sort columns */
+.board-sort-col {
+  transition: color 0.15s ease;
+}
+
+.board-sort-col:hover {
+  color: #fff;
+}
+
+.board-sort-col .board-sort-icon {
+  transition: color 0.15s ease;
+}
+
 @media (hover: none) {
-  .overview-client-card:active {
+  .overview-board-row:active {
     opacity: 0.85;
-    transform: scale(0.98);
+  }
+}
+
+/* ==========================================
+   AGENTE ANALISTA - REPORT
+   ========================================== */
+
+/* Ring progress animation */
+.analyst-ring-animate {
+  animation: analystRingDraw 1s ease-out forwards;
+}
+
+@keyframes analystRingDraw {
+  from {
+    stroke-dashoffset: 175.93;
+    opacity: 0.3;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Card stagger entrance */
+.analyst-card-enter {
+  animation: analystCardIn 0.35s ease-out backwards;
+  animation-delay: calc(var(--delay, 0) * 60ms + 100ms);
+}
+
+@keyframes analystCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Section toggle chevron transition */
+[id^="analyst-chevron-"] {
+  transition: transform 0.2s ease;
+}
+
+/* Section body transition */
+[id^="analyst-body-"] {
+  transition: max-height 0.35s ease, opacity 0.25s ease;
+}
+
+/* Smooth scroll margin for section anchors */
+[id^="analyst-section-"] {
+  scroll-margin-top: 1rem;
+}
+
+/* Section header hover */
+.analyst-report button.group:hover h4 {
+  color: #e2e8f0;
+}
+
+.analyst-report button.group:hover [id^="analyst-chevron-"] {
+  color: #94a3b8;
+}
+
+/* Navigation pills active state on hover */
+.analyst-report .scroll-mt-4 {
+  border-radius: 0.75rem;
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .analyst-card-enter {
+    animation: none;
+  }
+  .analyst-ring-animate {
+    animation: none;
   }
 }

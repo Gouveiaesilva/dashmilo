@@ -1077,7 +1077,7 @@ async function generateAnalystPDF() {
 
     var campaigns = campaignsDataCache;
     var cplTargets = getCurrentClientCplTargets();
-    var diagnostics = runAnalysisEngine(campaigns, cplTargets);
+    var analysisResult = runAnalysisEngine(campaigns, cplTargets);
 
     // Obter nome do cliente
     var clientFilter = document.getElementById('clientFilter');
@@ -1098,6 +1098,7 @@ async function generateAnalystPDF() {
         red: [239, 68, 68],
         amber: [245, 158, 11],
         blue: [59, 130, 246],
+        emerald: [16, 185, 129],
         bgLight: [248, 250, 252],
         border: [226, 232, 240],
         white: [255, 255, 255]
@@ -1117,6 +1118,11 @@ async function generateAnalystPDF() {
         success: 'SAUDAVEL'
     };
 
+    var diagnostics = analysisResult.diagnostics;
+    var scenario = analysisResult.scenario;
+    var strategy = analysisResult.strategy;
+    var scaling = analysisResult.scaling;
+
     var y = 15;
 
     // === HEADER ===
@@ -1126,7 +1132,7 @@ async function generateAnalystPDF() {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(18);
     doc.setTextColor.apply(doc, colors.dark);
-    doc.text('Diagnostico de Campanhas', 20, y + 3);
+    doc.text('Analise Estrategica de Campanhas', 20, y + 3);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
@@ -1144,12 +1150,10 @@ async function generateAnalystPDF() {
     y += 18;
 
     // Info cards
-    var today = new Date();
-    var dateStr = String(today.getDate()).padStart(2, '0') + '/' + String(today.getMonth() + 1).padStart(2, '0') + '/' + today.getFullYear();
-
+    var periodLabel = (document.getElementById('dateFilterLabel') || {}).textContent || '';
     var infoItems = [
         { label: 'Cliente', value: clientName },
-        { label: 'Data da Analise', value: dateStr }
+        { label: 'Periodo', value: periodLabel }
     ];
 
     var cardW = 82;
@@ -1220,12 +1224,40 @@ async function generateAnalystPDF() {
 
     y += 26;
 
-    // === DIAGNOSTICOS ===
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor.apply(doc, colors.dark);
-    doc.text('Diagnosticos', 20, y);
-    y += 6;
+    // === SECAO 1: ANALISE DO CENARIO ATUAL ===
+    if (scenario.length > 0) {
+        y = drawAnalystPDFSectionTitle(doc, y, 'Analise do Cenario Atual', colors);
+
+        scenario.forEach(function(s) {
+            doc.setFontSize(7.5);
+            var textLines = doc.splitTextToSize(s.text, 152);
+            var blockH = 8 + textLines.length * 3.5 + 4;
+
+            if (y + blockH > 275) { doc.addPage(); y = 20; }
+
+            doc.setFillColor.apply(doc, colors.bgLight);
+            doc.roundedRect(20, y, 170, blockH, 2, 2, 'F');
+            doc.setFillColor.apply(doc, colors.primary);
+            doc.rect(20, y + 2, 1.2, blockH - 4, 'F');
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor.apply(doc, colors.dark);
+            doc.text(s.title, 25, y + 6);
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.5);
+            doc.setTextColor.apply(doc, colors.text);
+            doc.text(textLines, 25, y + 11);
+
+            y += blockH + 2;
+        });
+
+        y += 4;
+    }
+
+    // === SECAO 2: DIAGNOSTICO ESTRATEGICO ===
+    y = drawAnalystPDFSectionTitle(doc, y, 'Diagnostico Estrategico', colors);
 
     if (diagnostics.length === 0) {
         doc.setFillColor.apply(doc, colors.bgLight);
@@ -1233,14 +1265,13 @@ async function generateAnalystPDF() {
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
         doc.setTextColor.apply(doc, colors.textLight);
-        doc.text('Nenhum ponto de atencao encontrado. Todas as campanhas dentro dos parametros.', 28, y + 10);
+        doc.text('Nenhum ponto critico identificado. Todas as campanhas dentro dos parametros.', 28, y + 10);
         y += 22;
     } else {
         diagnostics.forEach(function(d) {
             var sColors = severityColors[d.severity] || severityColors.info;
             var sLabel = severityLabels[d.severity] || 'INFO';
 
-            // Calcular altura do bloco
             doc.setFontSize(7.5);
             var descLines = doc.splitTextToSize(d.description, 152);
             var actionLines = doc.splitTextToSize('Plano de acao: ' + d.action, 148);
@@ -1249,52 +1280,47 @@ async function generateAnalystPDF() {
 
             var blockH = 12 + (descLines.length * 3.5) + 4 + (campaignLines.length * 3.2) + 4 + (actionLines.length * 3.5) + 6;
 
-            // Nova pagina se necessario
-            if (y + blockH > 275) {
-                doc.addPage();
-                y = 20;
-            }
+            if (y + blockH > 275) { doc.addPage(); y = 20; }
 
-            // Background
             doc.setFillColor.apply(doc, sColors.bg);
             doc.roundedRect(20, y, 170, blockH, 2, 2, 'F');
-
-            // Borda esquerda colorida
             doc.setFillColor.apply(doc, sColors.main);
             doc.rect(20, y + 2, 1.5, blockH - 4, 'F');
 
-            // Badge de severidade
-            doc.setFillColor.apply(doc, sColors.main);
-            var badgeW = doc.getTextWidth(sLabel) * 0.52 + 6;
-            doc.roundedRect(25, y + 3, badgeW, 5, 1, 1, 'F');
+            // Badge de severidade — calcular largura com font correto
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(6);
-            doc.setTextColor.apply(doc, colors.white);
-            doc.text(sLabel, 28, y + 6.5);
+            var badgeTextW = doc.getTextWidth(sLabel);
+            var badgePadX = 2.5;
+            var badgeW = badgeTextW + badgePadX * 2;
+            var badgeH = 5;
+            var badgeX = 25;
+            var badgeY = y + 3;
 
-            // Titulo
+            doc.setFillColor.apply(doc, sColors.main);
+            doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 1, 1, 'F');
+            doc.setTextColor.apply(doc, colors.white);
+            doc.text(sLabel, badgeX + badgePadX, badgeY + badgeH * 0.72);
+
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(9);
             doc.setTextColor.apply(doc, colors.dark);
-            doc.text(d.title, 25 + badgeW + 3, y + 7);
+            doc.text(d.title, badgeX + badgeW + 3, y + 7);
 
             var innerY = y + 12;
 
-            // Descricao
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(7.5);
             doc.setTextColor.apply(doc, colors.text);
             doc.text(descLines, 25, innerY);
             innerY += descLines.length * 3.5 + 3;
 
-            // Campanhas afetadas
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(6.5);
             doc.setTextColor.apply(doc, sColors.main);
             doc.text(campaignLines, 25, innerY);
             innerY += campaignLines.length * 3.2 + 3;
 
-            // Plano de acao
             doc.setFillColor(245, 248, 252);
             doc.roundedRect(24, innerY - 2, 162, actionLines.length * 3.5 + 5, 1.5, 1.5, 'F');
             doc.setFont('helvetica', 'normal');
@@ -1304,6 +1330,74 @@ async function generateAnalystPDF() {
 
             y += blockH + 3;
         });
+    }
+
+    y += 4;
+
+    // === SECAO 3: PLANO DE ACAO DETALHADO ===
+    if (strategy.length > 0) {
+        y = drawAnalystPDFSectionTitle(doc, y, 'Plano de Acao Detalhado', colors);
+
+        strategy.forEach(function(s) {
+            doc.setFontSize(7.5);
+            var textLines = doc.splitTextToSize(s.text, 152);
+            var blockH = 8 + textLines.length * 3.5 + 4;
+
+            if (y + blockH > 275) { doc.addPage(); y = 20; }
+
+            // Fundo com tom azulado
+            doc.setFillColor(240, 246, 255);
+            doc.roundedRect(20, y, 170, blockH, 2, 2, 'F');
+            doc.setFillColor.apply(doc, colors.primary);
+            doc.rect(20, y + 2, 1.2, blockH - 4, 'F');
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor.apply(doc, colors.primary);
+            doc.text(s.title, 25, y + 6);
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.5);
+            doc.setTextColor.apply(doc, colors.text);
+            doc.text(textLines, 25, y + 11);
+
+            y += blockH + 2;
+        });
+
+        y += 4;
+    }
+
+    // === SECAO 4: DIRECIONAMENTO AVANCADO ===
+    if (scaling.length > 0) {
+        y = drawAnalystPDFSectionTitle(doc, y, 'Direcionamento Avancado', colors);
+
+        scaling.forEach(function(s) {
+            doc.setFontSize(7.5);
+            var textLines = doc.splitTextToSize(s.text, 152);
+            var blockH = 8 + textLines.length * 3.5 + 4;
+
+            if (y + blockH > 275) { doc.addPage(); y = 20; }
+
+            // Fundo com tom esverdeado
+            doc.setFillColor(236, 253, 245);
+            doc.roundedRect(20, y, 170, blockH, 2, 2, 'F');
+            doc.setFillColor.apply(doc, colors.emerald);
+            doc.rect(20, y + 2, 1.2, blockH - 4, 'F');
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor.apply(doc, colors.emerald);
+            doc.text(s.title, 25, y + 6);
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.5);
+            doc.setTextColor.apply(doc, colors.text);
+            doc.text(textLines, 25, y + 11);
+
+            y += blockH + 2;
+        });
+
+        y += 4;
     }
 
     // === FAIXAS DE CPL (se configuradas) ===
@@ -1345,10 +1439,22 @@ async function generateAnalystPDF() {
     }
 
     // Salvar
-    var clientSlug = clientName.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\u00C0-\u024F-]/g, '');
-    var periodLabel = (document.getElementById('dateFilterLabel') || {}).textContent || '';
-    var periodSlug = periodLabel.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\u00C0-\u024F-\/]/g, '');
     doc.save('[ANALISE] [' + clientName + '] [' + periodLabel + '].pdf');
 
     showToast('PDF do diagnostico gerado com sucesso!');
+}
+
+function drawAnalystPDFSectionTitle(doc, y, title, colors) {
+    if (y + 12 > 275) { doc.addPage(); y = 20; }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor.apply(doc, colors.dark);
+    doc.text(title, 20, y);
+
+    doc.setDrawColor.apply(doc, colors.border);
+    doc.setLineWidth(0.2);
+    doc.line(20, y + 2, 190, y + 2);
+
+    return y + 8;
 }

@@ -93,6 +93,34 @@ exports.handler = async (event, context) => {
                 result = await fetchDebugActions(formattedAccountId, accessToken, params);
                 break;
 
+            case 'raw-campaigns':
+                // Diagnóstico: listar todas as campanhas sem filtro de objetivo
+                const rawUrl = `${META_API_BASE}/${formattedAccountId}/campaigns?fields=id,name,objective,status,effective_status&access_token=${accessToken}&limit=500`;
+                const rawResp = await fetch(rawUrl);
+                const rawResult = await rawResp.json();
+                result = { campaigns: (rawResult.data || []).map(c => ({ id: c.id, name: c.name, objective: c.objective, status: c.effective_status })) };
+                break;
+
+            case 'ad-creatives':
+                // Buscar criativos com métricas de performance + vídeo
+                result = await fetchAdCreatives(formattedAccountId, accessToken, params);
+                break;
+
+            case 'campaign-analysis':
+                // Análise de campanhas com métricas detalhadas
+                result = await fetchCampaignAnalysis(formattedAccountId, accessToken, params);
+                break;
+
+            case 'ad-daily': {
+                // Buscar insights diários de um anúncio específico
+                const { adId: targetAdId } = params;
+                if (!targetAdId) {
+                    return { statusCode: 400, headers, body: JSON.stringify({ error: 'adId é obrigatório' }) };
+                }
+                result = await fetchAdDailyInsights(formattedAccountId, targetAdId, accessToken, params);
+                break;
+            }
+
             default:
                 // Buscar insights (comportamento padrão)
                 result = await fetchInsights(formattedAccountId, accessToken, params);
@@ -141,11 +169,12 @@ async function fetchCampaigns(accountId, accessToken) {
         throw new Error(result.error.message);
     }
 
-    // Filtrar campanhas de leads e mensagens
+    // Filtrar campanhas cujo resultado seja leads ou conversas iniciadas
     const leadObjectives = [
         'OUTCOME_LEADS',
         'LEAD_GENERATION',
         'OUTCOME_ENGAGEMENT',
+        'OUTCOME_SALES',
         'MESSAGES'
     ];
 
@@ -186,7 +215,7 @@ async function fetchCampaignsWithInsights(accountId, accessToken, params) {
         value: campaignIds
     }]);
 
-    let url = `${META_API_BASE}/${accountId}/insights?fields=campaign_id,impressions,actions&filtering=${encodeURIComponent(filtering)}&access_token=${accessToken}&level=campaign&limit=500`;
+    let url = `${META_API_BASE}/${accountId}/insights?fields=campaign_id,spend,actions&filtering=${encodeURIComponent(filtering)}&access_token=${accessToken}&level=campaign&limit=500`;
 
     // Adicionar período
     if (timeRange) {
@@ -202,42 +231,63 @@ async function fetchCampaignsWithInsights(accountId, accessToken, params) {
         throw new Error(result.error.message);
     }
 
-    // Criar mapa de campanhas com seus dados de insights
+    // Criar mapa de campanhas com gasto e actions no período
     const campaignInsightsMap = new Map();
     (result.data || []).forEach(insight => {
-        const impressions = parseInt(insight.impressions || 0);
-        if (impressions > 0) {
-            campaignInsightsMap.set(insight.campaign_id, {
-                impressions,
-                actions: insight.actions || []
-            });
-        }
+        campaignInsightsMap.set(insight.campaign_id, {
+            spend: parseFloat(insight.spend || 0),
+            actions: insight.actions || []
+        });
     });
 
-    // Filtrar campanhas baseado em critérios específicos
+    // Separar campanhas de engajamento e vendas para verificar destination_type dos adsets
+    const needsDestinationCheck = ['OUTCOME_ENGAGEMENT', 'OUTCOME_SALES'];
+    const engagementCampaignIds = allCampaigns
+        .filter(c => needsDestinationCheck.includes(c.objective) && campaignInsightsMap.has(c.id) && campaignInsightsMap.get(c.id).spend > 0)
+        .map(c => c.id);
+
+    // Verificar quais campanhas de engajamento têm WhatsApp como destino
+    const whatsappEngagementIds = new Set();
+    if (engagementCampaignIds.length > 0) {
+        const engFiltering = JSON.stringify([{
+            field: 'campaign.id',
+            operator: 'IN',
+            value: engagementCampaignIds
+        }]);
+        const adsetsUrl = `${META_API_BASE}/${accountId}/adsets?fields=campaign_id,destination_type,optimization_goal&filtering=${encodeURIComponent(engFiltering)}&access_token=${accessToken}&limit=500`;
+        const adsetsResponse = await fetch(adsetsUrl);
+        const adsetsResult = await adsetsResponse.json();
+
+        // Objetivos de otimização que NÃO são conversas (excluir)
+        const excludedOptGoals = ['THRUPLAY', 'REACH', 'IMPRESSIONS', 'LINK_CLICKS', 'LANDING_PAGE_VIEWS', 'POST_ENGAGEMENT', 'VIDEO_VIEWS'];
+
+        if (adsetsResult.data) {
+            adsetsResult.data.forEach(adset => {
+                if (adset.destination_type === 'WHATSAPP' && !excludedOptGoals.includes(adset.optimization_goal)) {
+                    whatsappEngagementIds.add(adset.campaign_id);
+                }
+            });
+        }
+    }
+
+    // Incluir campanhas com gasto > 0 cujo resultado seja leads ou conversas iniciadas
     const campaignsWithInsights = allCampaigns.filter(campaign => {
         const insightData = campaignInsightsMap.get(campaign.id);
-        if (!insightData) return false; // Sem impressões no período
+        if (!insightData || insightData.spend <= 0) return false;
 
-        // EXCLUIR campanhas de remarketing (pelo nome)
-        const campaignNameLower = campaign.name.toLowerCase();
-        if (campaignNameLower.includes('remarketing') || campaignNameLower.includes('rmkt')) {
-            return false;
-        }
-
-        // Campanhas de LEADS (formulário) - incluir se tiverem impressões
+        // Campanhas de LEADS (formulário)
         if (campaign.objective === 'OUTCOME_LEADS' || campaign.objective === 'LEAD_GENERATION') {
             return true;
         }
 
-        // Campanhas de MENSAGENS/ENGAJAMENTO - incluir APENAS se tiverem conversões de mensagens
-        if (campaign.objective === 'OUTCOME_ENGAGEMENT' || campaign.objective === 'MESSAGES') {
-            const hasMessageConversions = insightData.actions.some(a =>
-                a.action_type === 'onsite_conversion.messaging_conversation_started_7d' ||
-                a.action_type === 'messaging_conversation_started_7d' ||
-                a.action_type === 'onsite_conversion.messaging_first_reply'
-            );
-            return hasMessageConversions;
+        // Campanhas de MENSAGENS
+        if (campaign.objective === 'MESSAGES') {
+            return true;
+        }
+
+        // Campanhas de ENGAJAMENTO ou VENDAS - apenas se o destino for WhatsApp
+        if (campaign.objective === 'OUTCOME_ENGAGEMENT' || campaign.objective === 'OUTCOME_SALES') {
+            return whatsappEngagementIds.has(campaign.id);
         }
 
         return false;
@@ -254,8 +304,8 @@ function getConversionType(objective) {
     if (objective === 'OUTCOME_LEADS' || objective === 'LEAD_GENERATION') {
         return 'form'; // Contar apenas preenchimentos de formulário
     }
-    // Campanhas de mensagens/engajamento
-    if (objective === 'OUTCOME_ENGAGEMENT' || objective === 'MESSAGES') {
+    // Campanhas de mensagens/engajamento/vendas via WhatsApp
+    if (objective === 'OUTCOME_ENGAGEMENT' || objective === 'MESSAGES' || objective === 'OUTCOME_SALES') {
         return 'message'; // Contar apenas conversas iniciadas
     }
     return 'form'; // Padrão
@@ -780,4 +830,330 @@ function calculateTrends(dailyData) {
         leads: calcTrend('leads'),
         cpl: calcTrend('cpl')
     };
+}
+
+// ==========================================
+// BUSCAR CRIATIVOS COM MÉTRICAS DE PERFORMANCE
+// ==========================================
+async function fetchAdCreatives(accountId, accessToken, params) {
+    const { campaignId, adsetId, datePreset, timeRange } = params;
+    const limit = parseInt(params.limit) || 10;
+    const offset = parseInt(params.offset) || 0;
+
+    // Buscar campanhas para mapear conversionType (em paralelo com insights)
+    const campaignsPromise = fetchCampaigns(accountId, accessToken);
+
+    // Passo 1: Buscar insights diretamente no nível de anúncio (leve, já filtrado pelo período)
+    const insightFields = 'ad_id,ad_name,campaign_id,impressions,reach,inline_link_clicks,ctr,spend,actions';
+
+    // Filtro por campanha ou adset
+    const insightFilters = [];
+    if (adsetId) {
+        insightFilters.push({ field: 'adset.id', operator: 'IN', value: [adsetId] });
+    } else if (campaignId) {
+        insightFilters.push({ field: 'campaign.id', operator: 'IN', value: [campaignId] });
+    }
+
+    let periodParam = '';
+    if (timeRange) {
+        periodParam = `&time_range=${encodeURIComponent(timeRange)}`;
+    } else {
+        periodParam = `&date_preset=${datePreset || 'last_30d'}`;
+    }
+
+    const filterParam = insightFilters.length > 0
+        ? `&filtering=${encodeURIComponent(JSON.stringify(insightFilters))}`
+        : '';
+
+    const insightsUrl = `${META_API_BASE}/${accountId}/insights?fields=${insightFields}&level=ad&limit=500${filterParam}${periodParam}&access_token=${accessToken}`;
+
+    const insightsResponse = await fetch(insightsUrl);
+    const insightsResult = await insightsResponse.json();
+
+    if (insightsResult.error) {
+        throw new Error(insightsResult.error.message);
+    }
+
+    const allInsights = insightsResult.data || [];
+    if (allInsights.length === 0) {
+        return { creatives: [], total: 0, hasMore: false };
+    }
+
+    // Ordenar por spend desc e paginar
+    allInsights.sort((a, b) => parseFloat(b.spend || 0) - parseFloat(a.spend || 0));
+    const total = allInsights.length;
+    const insights = allInsights.slice(offset, offset + limit);
+    const hasMore = (offset + limit) < total;
+
+    // Aguardar campanhas
+    const campaignsResult = await campaignsPromise;
+    const campaignConversionMap = new Map();
+    campaignsResult.campaigns.forEach(c => {
+        campaignConversionMap.set(c.id, c.conversionType);
+    });
+
+    // Passo 2: Buscar detalhes apenas dos anúncios da página
+    const adIds = insights.map(i => i.ad_id);
+    const BATCH_SIZE = 50;
+    const adsMap = new Map();
+
+    const batches = [];
+    for (let i = 0; i < adIds.length; i += BATCH_SIZE) {
+        batches.push(adIds.slice(i, i + BATCH_SIZE));
+    }
+
+    await Promise.all(batches.map(async (batchIds) => {
+        const adFiltering = JSON.stringify([{ field: 'id', operator: 'IN', value: batchIds }]);
+        const url = `${META_API_BASE}/${accountId}/ads?fields=id,effective_status,created_time,creative{thumbnail_url,object_type}&filtering=${encodeURIComponent(adFiltering)}&access_token=${accessToken}&limit=100`;
+
+        const response = await fetch(url);
+        const result = await response.json();
+        if (result.data) {
+            result.data.forEach(ad => adsMap.set(ad.id, ad));
+        }
+    }));
+
+    // Passo 3: Buscar métricas de vídeo apenas para anúncios com video_view nas actions
+    const videoAdIds = insights
+        .filter(i => getActionValue(i.actions, 'video_view') > 0)
+        .map(i => i.ad_id);
+
+    const videoMetricsMap = new Map();
+    if (videoAdIds.length > 0) {
+        const videoFields = 'ad_id,video_thruplay_watched_actions,video_p95_watched_actions,video_avg_time_watched_actions';
+        const videoBatches = [];
+        for (let i = 0; i < videoAdIds.length; i += BATCH_SIZE) {
+            videoBatches.push(videoAdIds.slice(i, i + BATCH_SIZE));
+        }
+
+        await Promise.all(videoBatches.map(async (batchIds) => {
+            const filtering = JSON.stringify([{ field: 'ad.id', operator: 'IN', value: batchIds }]);
+            const url = `${META_API_BASE}/${accountId}/insights?fields=${videoFields}&filtering=${encodeURIComponent(filtering)}&level=ad&limit=500${periodParam}&access_token=${accessToken}`;
+
+            const response = await fetch(url);
+            const result = await response.json();
+            if (result.data) {
+                result.data.forEach(d => videoMetricsMap.set(d.ad_id, d));
+            }
+        }));
+    }
+
+    // Passo 4: Montar resultado final
+    const creatives = insights.map(insight => {
+        const adId = insight.ad_id;
+        const adDetail = adsMap.get(adId) || {};
+        const impressions = parseInt(insight.impressions || 0);
+        const reach = parseInt(insight.reach || 0);
+        const linkClicks = parseInt(insight.inline_link_clicks || 0);
+        const ctr = parseFloat(insight.ctr || 0);
+        const spend = parseFloat(insight.spend || 0);
+
+        const conversionType = campaignConversionMap.get(insight.campaign_id) || 'form';
+        const leads = countLeads(insight.actions, conversionType);
+        const cpl = leads > 0 ? spend / leads : 0;
+
+        const objectType = adDetail.creative?.object_type || '';
+        const video3s = getActionValue(insight.actions, 'video_view');
+        const isVideo = objectType === 'VIDEO' || video3s > 0;
+
+        let videoMetrics = null;
+        if (isVideo && impressions > 0) {
+            const vData = videoMetricsMap.get(adId);
+            const thruplay = vData ? getVideoActionValue(vData.video_thruplay_watched_actions) : 0;
+            const p95 = vData ? getVideoActionValue(vData.video_p95_watched_actions) : 0;
+            const avgWatchTime = vData ? getVideoAvgWatchTime(vData.video_avg_time_watched_actions) : 0;
+
+            videoMetrics = {
+                hookRate: parseFloat(((video3s / impressions) * 100).toFixed(2)),
+                retention: parseFloat(((thruplay / impressions) * 100).toFixed(2)),
+                holdRate: parseFloat(((p95 / impressions) * 100).toFixed(2)),
+                avgWatchTime
+            };
+        }
+
+        return {
+            id: adId,
+            name: insight.ad_name,
+            status: adDetail.effective_status || 'UNKNOWN',
+            createdTime: adDetail.created_time || null,
+            thumbnailUrl: adDetail.creative?.thumbnail_url || null,
+            objectType,
+            isVideo,
+            metrics: {
+                impressions, reach, linkClicks,
+                ctr: parseFloat(ctr.toFixed(2)),
+                spend: parseFloat(spend.toFixed(2)),
+                leads,
+                cpl: parseFloat(cpl.toFixed(2))
+            },
+            videoMetrics
+        };
+    });
+    // Já ordenados por spend via allInsights.sort acima
+
+    return { creatives, total, hasMore };
+}
+
+// ==========================================
+// ANÁLISE DE CAMPANHAS COM MÉTRICAS DETALHADAS
+// ==========================================
+async function fetchCampaignAnalysis(accountId, accessToken, params) {
+    const { datePreset, timeRange } = params;
+
+    // 1. Buscar campanhas válidas (já filtradas por objetivo)
+    const campaignsResult = await fetchCampaignsWithInsights(accountId, accessToken, params);
+    const campaigns = campaignsResult.campaigns;
+
+    if (campaigns.length === 0) {
+        return { campaigns: [] };
+    }
+
+    const campaignIds = campaigns.map(c => c.id);
+    const campaignConversionMap = new Map();
+    campaigns.forEach(c => campaignConversionMap.set(c.id, c.conversionType));
+
+    // Período
+    let periodParam = '';
+    if (timeRange) {
+        periodParam = `&time_range=${encodeURIComponent(timeRange)}`;
+    } else {
+        periodParam = `&date_preset=${datePreset || 'last_30d'}`;
+    }
+
+    // 2. Buscar insights agregados + created_time + contagem de ads ativos em paralelo
+    const filtering = JSON.stringify([{ field: 'campaign.id', operator: 'IN', value: campaignIds }]);
+    const insightFields = 'campaign_id,impressions,reach,spend,inline_link_clicks,ctr,actions';
+
+    const [insightsRes, campaignDetailsRes, activeAdsRes] = await Promise.all([
+        // Insights agregados
+        fetch(`${META_API_BASE}/${accountId}/insights?fields=${insightFields}&filtering=${encodeURIComponent(filtering)}&level=campaign&limit=500${periodParam}&access_token=${accessToken}`),
+        // Created time das campanhas
+        fetch(`${META_API_BASE}/${accountId}/campaigns?fields=id,created_time&filtering=${encodeURIComponent(JSON.stringify([{ field: 'id', operator: 'IN', value: campaignIds }]))}&limit=500&access_token=${accessToken}`),
+        // Ads ativos agrupados
+        fetch(`${META_API_BASE}/${accountId}/ads?fields=campaign_id&filtering=${encodeURIComponent(JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }, { field: 'campaign.id', operator: 'IN', value: campaignIds }]))}&limit=500&access_token=${accessToken}`)
+    ]);
+
+    const insightsData = await insightsRes.json();
+    const campaignDetailsData = await campaignDetailsRes.json();
+    const activeAdsData = await activeAdsRes.json();
+
+    // Mapas
+    const insightsMap = new Map();
+    (insightsData.data || []).forEach(i => insightsMap.set(i.campaign_id, i));
+
+    const createdTimeMap = new Map();
+    (campaignDetailsData.data || []).forEach(c => createdTimeMap.set(c.id, c.created_time));
+
+    const activeAdsCountMap = new Map();
+    (activeAdsData.data || []).forEach(ad => {
+        const cid = ad.campaign_id;
+        activeAdsCountMap.set(cid, (activeAdsCountMap.get(cid) || 0) + 1);
+    });
+
+    // 3. Montar resultado
+    const result = campaigns
+        .filter(c => insightsMap.has(c.id))
+        .map(campaign => {
+            const insight = insightsMap.get(campaign.id);
+            const impressions = parseInt(insight.impressions || 0);
+            const reach = parseInt(insight.reach || 0);
+            const linkClicks = parseInt(insight.inline_link_clicks || 0);
+            const ctr = parseFloat(insight.ctr || 0);
+            const spend = parseFloat(insight.spend || 0);
+            const leads = countLeads(insight.actions, campaign.conversionType);
+            const cpl = leads > 0 ? spend / leads : 0;
+
+            return {
+                id: campaign.id,
+                name: campaign.name,
+                objective: campaign.objective,
+                status: campaign.status,
+                conversionType: campaign.conversionType,
+                createdTime: createdTimeMap.get(campaign.id) || null,
+                activeAdsCount: activeAdsCountMap.get(campaign.id) || 0,
+                metrics: {
+                    impressions, reach, linkClicks,
+                    ctr: parseFloat(ctr.toFixed(2)),
+                    spend: parseFloat(spend.toFixed(2)),
+                    leads,
+                    cpl: parseFloat(cpl.toFixed(2))
+                }
+            };
+        })
+        .sort((a, b) => b.metrics.spend - a.metrics.spend);
+
+    return { campaigns: result };
+}
+
+// Extrair valor de uma action específica do array de actions
+function getActionValue(actions, actionType) {
+    if (!actions || !Array.isArray(actions)) return 0;
+    const action = actions.find(a => a.action_type === actionType);
+    return action ? parseInt(action.value || 0) : 0;
+}
+
+// Extrair valor de ações de vídeo (formato: [{action_type, value}])
+function getVideoActionValue(videoActions) {
+    if (!videoActions || !Array.isArray(videoActions)) return 0;
+    const action = videoActions[0];
+    return action ? parseInt(action.value || 0) : 0;
+}
+
+// Extrair tempo médio de exibição em segundos
+function getVideoAvgWatchTime(avgWatchActions) {
+    if (!avgWatchActions || !Array.isArray(avgWatchActions)) return 0;
+    const action = avgWatchActions[0];
+    return action ? parseFloat(action.value || 0) : 0;
+}
+
+// ==========================================
+// BUSCAR INSIGHTS DIÁRIOS DE UM ANÚNCIO
+// ==========================================
+async function fetchAdDailyInsights(accountId, adId, accessToken, params) {
+    const { datePreset, timeRange } = params;
+
+    // Buscar campanhas para determinar conversionType
+    const campaignsResult = await fetchCampaigns(accountId, accessToken);
+    const campaignConversionMap = new Map();
+    campaignsResult.campaigns.forEach(c => {
+        campaignConversionMap.set(c.id, c.conversionType);
+    });
+
+    const filtering = JSON.stringify([{ field: 'ad.id', operator: 'IN', value: [adId] }]);
+    const fields = 'campaign_id,spend,impressions,reach,inline_link_clicks,ctr,actions';
+
+    let url = `${META_API_BASE}/${accountId}/insights?fields=${fields}&filtering=${encodeURIComponent(filtering)}&access_token=${accessToken}&level=ad&time_increment=1&limit=500`;
+
+    if (timeRange) {
+        url += `&time_range=${encodeURIComponent(timeRange)}`;
+    } else {
+        url += `&date_preset=${datePreset || 'last_30d'}`;
+    }
+
+    const response = await fetch(url);
+    const result = await response.json();
+
+    if (result.error) {
+        throw new Error(result.error.message);
+    }
+
+    const daily = (result.data || []).map(day => {
+        const campaignId = day.campaign_id;
+        const conversionType = campaignConversionMap.get(campaignId) || 'form';
+        const spend = parseFloat(day.spend || 0);
+        const leads = countLeads(day.actions, conversionType);
+
+        return {
+            date: day.date_start,
+            spend,
+            impressions: parseInt(day.impressions || 0),
+            reach: parseInt(day.reach || 0),
+            linkClicks: parseInt(day.inline_link_clicks || 0),
+            ctr: parseFloat(day.ctr || 0),
+            leads,
+            cpl: leads > 0 ? parseFloat((spend / leads).toFixed(2)) : 0
+        };
+    }).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    return { daily };
 }

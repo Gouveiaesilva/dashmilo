@@ -2803,144 +2803,323 @@ async function loadAnalystReport() {
 }
 
 function runAnalysisEngine(campaigns, cplTargets) {
-    const diagnostics = [];
-    if (campaigns.length === 0) return diagnostics;
+    const result = { diagnostics: [], scenario: [], strategy: [], scaling: [] };
+    if (campaigns.length === 0) return result;
 
     const totalSpend = campaigns.reduce((s, c) => s + c.metrics.spend, 0);
     const totalLeads = campaigns.reduce((s, c) => s + c.metrics.leads, 0);
+    const totalImpressions = campaigns.reduce((s, c) => s + c.metrics.impressions, 0);
+    const totalReach = campaigns.reduce((s, c) => s + c.metrics.reach, 0);
+    const avgCpl = totalLeads > 0 ? totalSpend / totalLeads : 0;
+    const avgCtr = totalImpressions > 0 ? campaigns.reduce((s, c) => s + c.metrics.ctr * c.metrics.impressions, 0) / totalImpressions : 0;
+    const avgFreq = totalReach > 0 ? totalImpressions / totalReach : 0;
+    const activeCampaigns = campaigns.filter(c => c.status === 'ACTIVE');
+    const withLeads = campaigns.filter(c => c.metrics.leads > 0 && c.metrics.spend > 0);
+    withLeads.sort((a, b) => a.metrics.cpl - b.metrics.cpl);
 
-    // ---- Regra 1: CPL Critico ----
-    if (cplTargets) {
-        const criticalCpls = campaigns.filter(c => c.metrics.leads > 0 && c.metrics.cpl > cplTargets.warning);
-        if (criticalCpls.length > 0) {
-            diagnostics.push({
-                severity: 'critical',
-                icon: 'error',
-                title: 'CPL em nivel critico',
-                description: `${criticalCpls.length} campanha(s) com CPL acima de ${formatCurrency(cplTargets.warning)}, o limite maximo aceitavel para este cliente.`,
-                campaigns: criticalCpls.map(c => ({ name: c.name, detail: `CPL ${formatCurrency(c.metrics.cpl)}` })),
-                action: 'Revise os publicos e criativos dessas campanhas. Considere pausar as que nao convertem e redistribuir o orcamento para campanhas com melhor desempenho.'
-            });
-        }
+    // ==================================================
+    // SECAO 1: ANALISE DO CENARIO ATUAL
+    // ==================================================
 
-        // ---- Regra 2: CPL Atencao ----
-        const warningCpls = campaigns.filter(c => c.metrics.leads > 0 && c.metrics.cpl > cplTargets.healthy && c.metrics.cpl <= cplTargets.warning);
-        if (warningCpls.length > 0) {
-            diagnostics.push({
-                severity: 'warning',
-                icon: 'warning',
-                title: 'CPL requer atencao',
-                description: `${warningCpls.length} campanha(s) com CPL entre ${formatCurrency(cplTargets.healthy)} e ${formatCurrency(cplTargets.warning)}. Ainda aceitavel, mas proximo do limite.`,
-                campaigns: warningCpls.map(c => ({ name: c.name, detail: `CPL ${formatCurrency(c.metrics.cpl)}` })),
-                action: 'Monitore de perto. Teste novos criativos e segmentacoes para reduzir o custo por lead antes que atinja nivel critico.'
-            });
-        }
-    }
+    // Resumo executivo
+    result.scenario.push({
+        icon: 'summarize',
+        title: 'Resumo executivo',
+        text: `Investimento total de ${formatCurrency(totalSpend)} distribuido em ${campaigns.length} campanha(s) (${activeCampaigns.length} ativa(s)), gerando ${formatNumber(totalLeads)} lead(s) com CPL medio de ${totalLeads > 0 ? formatCurrency(avgCpl) : '—'}. CTR medio ponderado: ${avgCtr.toFixed(2)}%. Frequencia geral: ${avgFreq.toFixed(1)}x.`
+    });
 
-    // ---- Regra 3: Campanha sem leads ----
-    const noLeadsCampaigns = campaigns.filter(c => c.metrics.spend > 10 && c.metrics.leads === 0);
-    if (noLeadsCampaigns.length > 0) {
-        diagnostics.push({
-            severity: 'critical',
-            icon: 'money_off',
-            title: 'Campanhas sem conversoes',
-            description: `${noLeadsCampaigns.length} campanha(s) com investimento ativo mas zero leads no periodo. Orcamento sendo desperdicado.`,
-            campaigns: noLeadsCampaigns.map(c => ({ name: c.name, detail: `Gasto ${formatCurrency(c.metrics.spend)}` })),
-            action: 'Pause imediatamente campanhas com gasto significativo e zero conversoes. Verifique se o pixel/formulario esta funcionando corretamente e se o publico esta alinhado com a oferta.'
+    // Eficiencia do investimento
+    if (totalLeads > 0 && totalSpend > 0) {
+        const costPerImpression = (totalSpend / totalImpressions) * 1000;
+        result.scenario.push({
+            icon: 'speed',
+            title: 'Eficiencia do investimento',
+            text: `CPM (custo por mil impressoes) de ${formatCurrency(costPerImpression)}. Para cada R$ 1,00 investido, foram gerados ${(totalLeads / totalSpend * 100).toFixed(1)} leads por R$ 100. ${avgCtr >= 1.5 ? 'A taxa de cliques esta acima da media do mercado, indicando boa atratividade dos anuncios.' : avgCtr >= 0.7 ? 'A taxa de cliques esta dentro da media aceitavel.' : 'A taxa de cliques esta abaixo do ideal, indicando necessidade de revisar criativos e segmentacao.'}`
         });
     }
 
-    // ---- Regra 4: Frequencia alta (fadiga) ----
+    // Analise de frequencia geral
+    if (avgFreq > 0) {
+        const freqText = avgFreq <= 2.0
+            ? `Frequencia media de ${avgFreq.toFixed(1)}x esta saudavel. O publico ainda nao esta saturado.`
+            : avgFreq <= 3.5
+            ? `Frequencia media de ${avgFreq.toFixed(1)}x esta moderada. Comece a monitorar sinais de fadiga nos criativos.`
+            : `Frequencia media de ${avgFreq.toFixed(1)}x esta elevada. Ha risco significativo de fadiga do publico, o que tende a aumentar o CPL e reduzir a taxa de conversao.`;
+        result.scenario.push({ icon: 'groups', title: 'Saturacao do publico', text: freqText });
+    }
+
+    // ==================================================
+    // SECAO 2: DIAGNOSTICO ESTRATEGICO (cards com severidade)
+    // ==================================================
+
+    // CPL Critico
+    if (cplTargets) {
+        const criticalCpls = campaigns.filter(c => c.metrics.leads > 0 && c.metrics.cpl > cplTargets.warning);
+        if (criticalCpls.length > 0) {
+            result.diagnostics.push({
+                severity: 'critical', icon: 'error',
+                title: 'CPL em nivel critico',
+                description: `${criticalCpls.length} campanha(s) com CPL acima de ${formatCurrency(cplTargets.warning)}, o limite maximo aceitavel.`,
+                campaigns: criticalCpls.map(c => ({ name: c.name, detail: `CPL ${formatCurrency(c.metrics.cpl)}` })),
+                action: 'Pause ou reestruture essas campanhas. Revise publicos, criativos e ofertas. Redistribua o orcamento para campanhas com CPL saudavel. Considere testar novos angulos de comunicacao antes de reativar.'
+            });
+        }
+
+        const warningCpls = campaigns.filter(c => c.metrics.leads > 0 && c.metrics.cpl > cplTargets.healthy && c.metrics.cpl <= cplTargets.warning);
+        if (warningCpls.length > 0) {
+            result.diagnostics.push({
+                severity: 'warning', icon: 'warning',
+                title: 'CPL requer atencao',
+                description: `${warningCpls.length} campanha(s) com CPL entre ${formatCurrency(cplTargets.healthy)} e ${formatCurrency(cplTargets.warning)}. Ainda aceitavel, mas proximo do limite.`,
+                campaigns: warningCpls.map(c => ({ name: c.name, detail: `CPL ${formatCurrency(c.metrics.cpl)}` })),
+                action: 'Monitore diariamente. Teste novos criativos (minimo 2-3 variacoes) e refine a segmentacao. Avalie se o publico-alvo esta alinhado com a oferta. Considere criar publicos lookalike a partir dos leads ja convertidos.'
+            });
+        }
+    }
+
+    // Campanhas sem leads
+    const noLeadsCampaigns = campaigns.filter(c => c.metrics.spend > 10 && c.metrics.leads === 0);
+    if (noLeadsCampaigns.length > 0) {
+        const wastedSpend = noLeadsCampaigns.reduce((s, c) => s + c.metrics.spend, 0);
+        result.diagnostics.push({
+            severity: 'critical', icon: 'money_off',
+            title: 'Campanhas sem conversoes',
+            description: `${noLeadsCampaigns.length} campanha(s) consumiram ${formatCurrency(wastedSpend)} sem gerar nenhum lead. Possíveis causas: formulario com erro, publico desalinhado, oferta fraca ou pagina de destino lenta.`,
+            campaigns: noLeadsCampaigns.map(c => ({ name: c.name, detail: `Gasto ${formatCurrency(c.metrics.spend)}` })),
+            action: 'Pause imediatamente. Antes de reativar: (1) teste o formulario/pagina de destino manualmente, (2) verifique se o pixel esta disparando corretamente, (3) revise se o publico tem intencao real de conversao, (4) avalie se a oferta e clara e atrativa no criativo.'
+        });
+    }
+
+    // Frequencia alta
     const highFreqCampaigns = campaigns.filter(c => {
         const freq = c.metrics.reach > 0 ? c.metrics.impressions / c.metrics.reach : 0;
         return freq > 3.0 && c.status === 'ACTIVE';
     });
     if (highFreqCampaigns.length > 0) {
-        diagnostics.push({
-            severity: 'warning',
-            icon: 'repeat',
-            title: 'Frequencia alta — possivel fadiga',
-            description: `${highFreqCampaigns.length} campanha(s) ativa(s) com frequencia acima de 3x. O publico esta vendo os anuncios muitas vezes, o que pode causar fadiga e aumentar o CPL.`,
+        result.diagnostics.push({
+            severity: 'warning', icon: 'repeat',
+            title: 'Frequencia alta — fadiga de publico',
+            description: `${highFreqCampaigns.length} campanha(s) ativa(s) com frequencia acima de 3x. O mesmo publico esta vendo os anuncios repetidamente, reduzindo o impacto e aumentando o custo.`,
             campaigns: highFreqCampaigns.map(c => {
                 const freq = (c.metrics.impressions / c.metrics.reach).toFixed(1);
                 return { name: c.name, detail: `Freq. ${freq}x` };
             }),
-            action: 'Expanda o publico-alvo ou adicione novos criativos para renovar a comunicacao. Considere excluir quem ja converteu.'
+            action: 'Acoes imediatas: (1) adicione novos criativos com angulos diferentes, (2) expanda o publico-alvo (aumente lookalike de 1% para 3-5%), (3) exclua quem ja converteu, (4) considere ativar campanhas de remarketing separadas para quem ja interagiu.'
         });
     }
 
-    // ---- Regra 5: CTR baixo ----
+    // CTR baixo
     const lowCtrCampaigns = campaigns.filter(c => c.metrics.ctr < 0.7 && c.metrics.impressions > 1000 && c.status === 'ACTIVE');
     if (lowCtrCampaigns.length > 0) {
-        diagnostics.push({
-            severity: 'warning',
-            icon: 'ads_click',
+        result.diagnostics.push({
+            severity: 'warning', icon: 'ads_click',
             title: 'CTR abaixo do ideal',
-            description: `${lowCtrCampaigns.length} campanha(s) com taxa de cliques inferior a 0.7%. Isso indica que os criativos ou a segmentacao nao estao gerando interesse suficiente.`,
+            description: `${lowCtrCampaigns.length} campanha(s) com CTR inferior a 0.7%. Os anuncios estao sendo exibidos mas nao geram cliques suficientes — o publico nao esta sendo atraido pela comunicacao.`,
             campaigns: lowCtrCampaigns.map(c => ({ name: c.name, detail: `CTR ${c.metrics.ctr.toFixed(2)}%` })),
-            action: 'Teste novos formatos de criativo (video, carrossel). Revise o copy e a proposta de valor. Verifique se o publico tem afinidade com a oferta.'
+            action: 'Revise o alinhamento criativo-publico-oferta: (1) teste videos curtos (ate 15s) com hook nos primeiros 3 segundos, (2) use carroseis com storytelling, (3) revise o copy — o beneficio principal deve estar claro na primeira linha, (4) teste CTAs mais diretos, (5) verifique se o publico-alvo realmente tem interesse na oferta.'
         });
     }
 
-    // ---- Regra 6: Poucos criativos ----
+    // Poucos criativos
     const fewCreativesCampaigns = campaigns.filter(c => c.activeAdsCount < 3 && c.status === 'ACTIVE');
     if (fewCreativesCampaigns.length > 0) {
-        diagnostics.push({
-            severity: 'info',
-            icon: 'photo_library',
+        result.diagnostics.push({
+            severity: 'info', icon: 'photo_library',
             title: 'Diversidade de criativos baixa',
-            description: `${fewCreativesCampaigns.length} campanha(s) ativa(s) com menos de 3 criativos ativos. Pouca variedade limita a otimizacao do algoritmo.`,
+            description: `${fewCreativesCampaigns.length} campanha(s) ativa(s) com menos de 3 criativos. O algoritmo precisa de variedade para otimizar a entrega e encontrar a melhor combinacao de criativo + publico.`,
             campaigns: fewCreativesCampaigns.map(c => ({ name: c.name, detail: `${c.activeAdsCount} criativo(s)` })),
-            action: 'Adicione pelo menos 3-5 variacoes de criativo por campanha. Teste diferentes angulos de comunicacao, formatos (imagem vs video) e CTAs.'
+            action: 'Adicione 3-5 variacoes por campanha. Diversifique: (1) formatos (imagem estatica, video, carrossel), (2) angulos de comunicacao (dor, beneficio, prova social, urgencia), (3) CTAs diferentes. Mantenha o publico fixo e varie apenas o criativo para identificar o que performa melhor.'
         });
     }
 
-    // ---- Regra 7: Concentracao de gasto ----
+    // Concentracao de gasto
     if (campaigns.length > 1 && totalSpend > 0) {
-        const concentratedCampaigns = campaigns.filter(c => (c.metrics.spend / totalSpend) > 0.6);
-        if (concentratedCampaigns.length > 0) {
-            diagnostics.push({
-                severity: 'warning',
-                icon: 'pie_chart',
+        const concentrated = campaigns.filter(c => (c.metrics.spend / totalSpend) > 0.6);
+        if (concentrated.length > 0) {
+            result.diagnostics.push({
+                severity: 'warning', icon: 'pie_chart',
                 title: 'Orcamento concentrado',
-                description: `Uma unica campanha consome mais de 60% do investimento total. Isso aumenta o risco caso ela perca performance.`,
-                campaigns: concentratedCampaigns.map(c => {
+                description: `Uma unica campanha consome mais de 60% do investimento total. Se essa campanha perder performance, o impacto sera significativo em toda a operacao.`,
+                campaigns: concentrated.map(c => {
                     const pct = ((c.metrics.spend / totalSpend) * 100).toFixed(0);
                     return { name: c.name, detail: `${pct}% do total` };
                 }),
-                action: 'Diversifique o investimento entre mais campanhas para reduzir risco. Teste campanhas com diferentes publicos e objetivos.'
+                action: 'Diversifique: (1) crie campanhas paralelas com publicos diferentes (lookalike, interesses, remarketing), (2) teste novos objetivos (mensagens vs formulario), (3) distribua o orcamento de forma que nenhuma campanha tenha mais de 40% do total.'
             });
         }
     }
 
-    // ---- Regra 8: Saude geral (positiva) ----
+    // Disparidade de CPL entre campanhas
+    if (withLeads.length >= 2) {
+        const best = withLeads[0];
+        const worst = withLeads[withLeads.length - 1];
+        if (worst.metrics.cpl > best.metrics.cpl * 2.5) {
+            result.diagnostics.push({
+                severity: 'warning', icon: 'swap_vert',
+                title: 'Grande disparidade de CPL entre campanhas',
+                description: `A campanha mais eficiente tem CPL de ${formatCurrency(best.metrics.cpl)} enquanto a menos eficiente opera a ${formatCurrency(worst.metrics.cpl)} (${(worst.metrics.cpl / best.metrics.cpl).toFixed(1)}x mais cara).`,
+                campaigns: [
+                    { name: best.name, detail: `Melhor: ${formatCurrency(best.metrics.cpl)}` },
+                    { name: worst.name, detail: `Pior: ${formatCurrency(worst.metrics.cpl)}` }
+                ],
+                action: 'Realoque orcamento da campanha mais cara para a mais eficiente. Analise o que diferencia as duas: publico, criativo, horario de veiculacao, posicionamento. Aplique os aprendizados da campanha vencedora nas demais.'
+            });
+        }
+    }
+
+    // Saude geral
     if (cplTargets && totalLeads > 0) {
         const healthyCampaigns = campaigns.filter(c => c.metrics.leads > 0 && c.metrics.cpl <= cplTargets.healthy);
-        const avgCpl = totalSpend / totalLeads;
         if (healthyCampaigns.length > 0 && avgCpl <= cplTargets.healthy) {
-            diagnostics.push({
-                severity: 'success',
-                icon: 'check_circle',
+            result.diagnostics.push({
+                severity: 'success', icon: 'check_circle',
                 title: 'Desempenho geral saudavel',
                 description: `CPL medio de ${formatCurrency(avgCpl)} esta dentro da faixa saudavel. ${healthyCampaigns.length} de ${campaigns.length} campanha(s) com CPL ideal.`,
                 campaigns: healthyCampaigns.map(c => ({ name: c.name, detail: `CPL ${formatCurrency(c.metrics.cpl)}` })),
-                action: 'Mantenha a estrategia atual. Considere escalar gradualmente o orcamento das campanhas com melhor CPL.'
+                action: 'Mantenha a estrategia atual e evite mudancas bruscas. Considere escalar gradualmente (aumento de 15-20% no orcamento a cada 3-5 dias) nas campanhas com melhor CPL.'
             });
         }
     }
 
-    // Ordenar: critical > warning > info > success
+    // Ordenar diagnosticos
     const severityOrder = { critical: 0, warning: 1, info: 2, success: 3 };
-    diagnostics.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+    result.diagnostics.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
-    return diagnostics;
+    // ==================================================
+    // SECAO 3: PLANO DE ACAO (estrategias condicionais)
+    // ==================================================
+
+    // Remarketing
+    if (highFreqCampaigns.length > 0 || (avgFreq > 2.5 && activeCampaigns.length > 0)) {
+        result.strategy.push({
+            icon: 'conversion_path', title: 'Implementar funil de remarketing',
+            text: `Com frequencia elevada, parte do publico ja demonstrou interesse mas nao converteu. Crie campanhas de remarketing segmentando: (1) quem visitou a pagina mas nao preencheu o formulario (ultimos 7-14 dias), (2) quem interagiu com os anuncios (curtiu, comentou, clicou), (3) quem assistiu mais de 75% dos videos. Use criativos com prova social, depoimentos e ofertas com urgencia.`
+        });
+    }
+
+    // Testes A/B
+    if (fewCreativesCampaigns.length > 0 || lowCtrCampaigns.length > 0) {
+        result.strategy.push({
+            icon: 'science', title: 'Estrutura de testes A/B',
+            text: `Para otimizar resultados, implemente testes A/B sistematicos: (1) teste uma variavel por vez (copy, imagem, CTA, publico), (2) mantenha orcamento minimo de R$ 20-30/dia por variacao, (3) aguarde pelo menos 3-5 dias ou 1.000 impressoes antes de concluir, (4) desative o perdedor e crie nova variacao contra o vencedor. Priorize testar: ${lowCtrCampaigns.length > 0 ? 'criativos e hooks (CTR baixo)' : 'variacoes de copy e formatos'}.`
+        });
+    }
+
+    // Realocacao de orcamento
+    if (withLeads.length >= 2 && noLeadsCampaigns.length > 0) {
+        const wastedSpend = noLeadsCampaigns.reduce((s, c) => s + c.metrics.spend, 0);
+        const bestCampaign = withLeads[0];
+        const potentialLeads = Math.floor(wastedSpend / bestCampaign.metrics.cpl);
+        result.strategy.push({
+            icon: 'account_balance', title: 'Realocacao de orcamento',
+            text: `${formatCurrency(wastedSpend)} estao sendo gastos em campanhas sem conversao. Se realocados para "${bestCampaign.name}" (CPL de ${formatCurrency(bestCampaign.metrics.cpl)}), potencial de gerar aproximadamente ${potentialLeads} leads adicionais. Recomendacao: pause as campanhas improdutivas e redistribua de forma gradual (nao aumente mais de 30% de uma vez para nao desestabilizar o algoritmo).`
+        });
+    }
+
+    // Otimizacao de copy e CTA
+    if (lowCtrCampaigns.length > 0) {
+        result.strategy.push({
+            icon: 'edit_note', title: 'Otimizacao de copy e CTA',
+            text: `Campanhas com CTR baixo precisam de revisao na comunicacao. Checklist: (1) a primeira linha do copy deve conter o principal beneficio ou uma pergunta que gere identificacao, (2) use numeros e dados concretos ("Economize 40%", "Em apenas 7 dias"), (3) CTA claro e direto ("Quero meu orcamento gratis", "Agendar agora"), (4) teste emojis estrategicos no copy, (5) a imagem/video deve ter contraste alto e ser legivel em tela pequena.`
+        });
+    }
+
+    // ==================================================
+    // SECAO 4: DIRECIONAMENTO AVANCADO (escala)
+    // ==================================================
+
+    // Campanhas prontas para escalar
+    if (cplTargets && withLeads.length > 0) {
+        const scalable = withLeads.filter(c => c.metrics.cpl <= cplTargets.excellent && c.status === 'ACTIVE');
+        if (scalable.length > 0) {
+            result.scaling.push({
+                icon: 'rocket_launch', title: 'Campanhas prontas para escalar',
+                text: `${scalable.length} campanha(s) com CPL excelente (abaixo de ${formatCurrency(cplTargets.excellent)}) e ativa(s). Estas sao candidatas a escala: ${scalable.map(c => `"${c.name}" (CPL ${formatCurrency(c.metrics.cpl)})`).join(', ')}. Para escalar com seguranca: aumente o orcamento em 15-20% a cada 3-5 dias. Monitore o CPL — se subir mais de 25%, pause o aumento e estabilize por uma semana.`
+            });
+        }
+    }
+
+    // Sugestao de alocacao
+    if (totalSpend > 0 && activeCampaigns.length > 0) {
+        result.scaling.push({
+            icon: 'donut_large', title: 'Sugestao de alocacao de orcamento',
+            text: `Distribuicao recomendada do investimento: 70% para campanhas de conversao validadas (as que ja geram leads com CPL aceitavel), 20% para remarketing (publico quente que ja interagiu), 10% para testes de novos criativos e publicos. Revise esta distribuicao semanalmente com base nos resultados.`
+        });
+    }
+
+    // Visao de medio/longo prazo
+    if (totalLeads > 0) {
+        const leadsPerReal = totalLeads / totalSpend;
+        result.scaling.push({
+            icon: 'trending_up', title: 'Visao estrategica de medio prazo',
+            text: `Com a eficiencia atual (${(leadsPerReal * 100).toFixed(1)} leads a cada R$ 100 investidos), um aumento de 30% no orcamento poderia gerar aproximadamente ${Math.round(totalLeads * 1.3)} leads no proximo periodo equivalente (estimativa conservadora, considerando possivel aumento de CPL na escala). Foque em: (1) construir um banco de criativos validados (minimo 10 variacoes), (2) mapear os 3 melhores publicos por campanha, (3) implementar automacao de follow-up (CRM/chatbot) para aumentar a taxa de conversao dos leads gerados.`
+        });
+    }
+
+    return result;
 }
 
-function renderAnalystReport(diagnostics, cplTargets, campaigns) {
+function formatAnalystSteps(text) {
+    // Detect (1) ... (2) ... patterns and render as structured list
+    if (!/\(\d+\)/.test(text)) return `<p class="text-[11px] text-slate-400 leading-relaxed">${text}</p>`;
+    const parts = text.split(/(?=\(\d+\))/);
+    const intro = parts[0].replace(/[:\s]+$/, '').trim();
+    const steps = parts.slice(1).map(s => s.replace(/^\(\d+\)\s*/, '').replace(/[,.\s]+$/, '').trim()).filter(s => s.length > 0);
+    if (steps.length === 0) return `<p class="text-[11px] text-slate-400 leading-relaxed">${text}</p>`;
+    let html = '';
+    if (intro) html += `<p class="text-[11px] text-slate-400 leading-relaxed mb-1.5">${intro}:</p>`;
+    html += '<div class="space-y-1 ml-0.5">';
+    steps.forEach((step, i) => {
+        html += `<div class="flex items-start gap-2 text-[11px] text-slate-400 leading-relaxed">
+            <span class="text-[9px] font-bold text-slate-500 bg-slate-500/10 rounded px-1 py-px mt-px shrink-0">${i + 1}</span>
+            <span>${step}</span>
+        </div>`;
+    });
+    html += '</div>';
+    return html;
+}
+
+function toggleAnalystSection(sectionId) {
+    const body = document.getElementById('analyst-body-' + sectionId);
+    const icon = document.getElementById('analyst-chevron-' + sectionId);
+    if (!body) return;
+    if (body.classList.contains('hidden')) {
+        body.classList.remove('hidden');
+        body.style.maxHeight = '0px';
+        body.style.opacity = '0';
+        requestAnimationFrame(() => {
+            body.style.transition = 'max-height 0.35s ease, opacity 0.25s ease';
+            body.style.maxHeight = body.scrollHeight + 'px';
+            body.style.opacity = '1';
+            setTimeout(() => { body.style.maxHeight = 'none'; body.style.transition = ''; }, 350);
+        });
+        if (icon) icon.style.transform = 'rotate(0deg)';
+    } else {
+        body.style.maxHeight = body.scrollHeight + 'px';
+        body.style.transition = 'max-height 0.3s ease, opacity 0.2s ease';
+        requestAnimationFrame(() => {
+            body.style.maxHeight = '0px';
+            body.style.opacity = '0';
+        });
+        setTimeout(() => { body.classList.add('hidden'); body.style.transition = ''; }, 300);
+        if (icon) icon.style.transform = 'rotate(-90deg)';
+    }
+}
+
+function scrollToAnalystSection(sectionId) {
+    const el = document.getElementById('analyst-section-' + sectionId);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderAnalystReport(analysisResult, cplTargets, campaigns) {
     const content = document.getElementById('analysisContent');
     const totalSpend = campaigns.reduce((s, c) => s + c.metrics.spend, 0);
     const totalLeads = campaigns.reduce((s, c) => s + c.metrics.leads, 0);
+    const totalImpressions = campaigns.reduce((s, c) => s + c.metrics.impressions, 0);
     const avgCpl = totalLeads > 0 ? totalSpend / totalLeads : 0;
+    const avgCtr = totalImpressions > 0 ? campaigns.reduce((s, c) => s + c.metrics.ctr * c.metrics.impressions, 0) / totalImpressions : 0;
+    const activeCampaigns = campaigns.filter(c => c.status === 'ACTIVE');
+    const { diagnostics, scenario, strategy, scaling } = analysisResult;
 
     const severityConfig = {
         critical: { bg: 'bg-red-500/5', border: 'border-red-500/20', iconColor: 'text-red-400', badgeBg: 'bg-red-500/10', badgeText: 'text-red-400', label: 'Critico' },
@@ -2949,83 +3128,206 @@ function renderAnalystReport(diagnostics, cplTargets, campaigns) {
         success: { bg: 'bg-emerald-500/5', border: 'border-emerald-500/20', iconColor: 'text-emerald-400', badgeBg: 'bg-emerald-500/10', badgeText: 'text-emerald-400', label: 'Saudavel' }
     };
 
-    // Contadores de severidade
     const criticalCount = diagnostics.filter(d => d.severity === 'critical').length;
     const warningCount = diagnostics.filter(d => d.severity === 'warning').length;
+    const infoCount = diagnostics.filter(d => d.severity === 'info').length;
+    const successCount = diagnostics.filter(d => d.severity === 'success').length;
 
-    // Header
+    // Health score (0-100)
+    let healthScore = 100;
+    healthScore -= criticalCount * 22;
+    healthScore -= warningCount * 10;
+    healthScore -= infoCount * 3;
+    healthScore += successCount * 5;
+    healthScore = Math.max(0, Math.min(100, healthScore));
+
+    let healthLabel, healthColor, healthIcon;
+    if (healthScore >= 75) { healthLabel = 'Saudavel'; healthColor = 'emerald'; healthIcon = 'check_circle'; }
+    else if (healthScore >= 45) { healthLabel = 'Atencao'; healthColor = 'amber'; healthIcon = 'warning'; }
+    else { healthLabel = 'Critico'; healthColor = 'red'; healthIcon = 'error'; }
+
+    // SVG ring progress
+    const ringR = 28;
+    const ringCirc = 2 * Math.PI * ringR;
+    const ringOffset = ringCirc - (healthScore / 100) * ringCirc;
+
+    // Section nav items
+    const sections = [];
+    if (scenario.length > 0) sections.push({ id: 'cenario', label: 'Cenario', icon: 'analytics', count: scenario.length });
+    sections.push({ id: 'diagnostico', label: 'Diagnostico', icon: 'diagnosis', count: diagnostics.length, badge: criticalCount > 0 ? 'red' : warningCount > 0 ? 'amber' : null });
+    if (strategy.length > 0) sections.push({ id: 'plano', label: 'Plano de Acao', icon: 'target', count: strategy.length });
+    if (scaling.length > 0) sections.push({ id: 'escala', label: 'Escala', icon: 'rocket_launch', count: scaling.length });
+
+    // ======= HEADER =======
     let html = `
-        <div class="mb-6">
-            <div class="flex flex-wrap items-center gap-3 mb-3">
-                <span class="material-symbols-outlined text-primary text-xl">psychology</span>
-                <h3 class="text-base font-bold text-white">Diagnostico do Periodo</h3>
-                <span class="text-xs text-slate-500">${campaigns.length} campanhas analisadas</span>
-                <button onclick="generateAnalystPDF()" class="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-xs font-semibold transition-colors">
+        <div class="analyst-report">
+            <!-- Header: Health Ring + Title + PDF -->
+            <div class="flex items-start gap-4 mb-5">
+                <div class="shrink-0 relative" title="Score de saude: ${healthScore}/100">
+                    <svg width="72" height="72" viewBox="0 0 72 72" class="transform -rotate-90">
+                        <circle cx="36" cy="36" r="${ringR}" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="5"/>
+                        <circle cx="36" cy="36" r="${ringR}" fill="none"
+                            stroke="${healthColor === 'emerald' ? '#10b981' : healthColor === 'amber' ? '#f59e0b' : '#ef4444'}"
+                            stroke-width="5" stroke-linecap="round"
+                            stroke-dasharray="${ringCirc}" stroke-dashoffset="${ringOffset}"
+                            class="analyst-ring-animate"/>
+                    </svg>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center">
+                        <span class="text-lg font-bold text-white leading-none">${healthScore}</span>
+                        <span class="text-[8px] text-slate-500 uppercase tracking-wider">score</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0 pt-1">
+                    <div class="flex items-center gap-2 mb-1">
+                        <h3 class="text-base font-bold text-white">Analise Estrategica</h3>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-${healthColor}-500/10 text-${healthColor}-400 uppercase">${healthLabel}</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500 leading-relaxed">${campaigns.length} campanha(s) analisada(s) &middot; ${activeCampaigns.length} ativa(s) &middot; ${diagnostics.length} ponto(s) identificado(s)</p>
+                </div>
+                <button onclick="generateAnalystPDF()" class="shrink-0 flex items-center gap-1.5 px-3.5 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-xs font-semibold transition-all hover:scale-[1.02] active:scale-95">
                     <span class="material-symbols-outlined text-sm">picture_as_pdf</span>
-                    Gerar PDF
+                    Exportar PDF
                 </button>
             </div>
-            <div class="flex flex-wrap gap-2 mb-4">
-                <span class="text-xs px-2 py-1 rounded bg-surface-dark text-slate-400">Investimento: <strong class="text-white">${formatCurrency(totalSpend)}</strong></span>
-                <span class="text-xs px-2 py-1 rounded bg-surface-dark text-slate-400">Leads: <strong class="text-white">${formatNumber(totalLeads)}</strong></span>
-                <span class="text-xs px-2 py-1 rounded bg-surface-dark text-slate-400">CPL medio: <strong class="text-white">${totalLeads > 0 ? formatCurrency(avgCpl) : '—'}</strong></span>
-                ${criticalCount > 0 ? `<span class="text-xs px-2 py-1 rounded bg-red-500/10 text-red-400 font-bold">${criticalCount} alerta(s) critico(s)</span>` : ''}
-                ${warningCount > 0 ? `<span class="text-xs px-2 py-1 rounded bg-amber-500/10 text-amber-400 font-bold">${warningCount} ponto(s) de atencao</span>` : ''}
+
+            <!-- KPI Cards -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                <div class="bg-background-dark border border-border-dark rounded-lg p-3 analyst-card-enter" style="--delay:0">
+                    <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Investimento</p>
+                    <p class="text-base font-bold text-white">${formatCurrency(totalSpend)}</p>
+                </div>
+                <div class="bg-background-dark border border-border-dark rounded-lg p-3 analyst-card-enter" style="--delay:1">
+                    <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Leads</p>
+                    <p class="text-base font-bold text-white">${formatNumber(totalLeads)}</p>
+                </div>
+                <div class="bg-background-dark border border-border-dark rounded-lg p-3 analyst-card-enter" style="--delay:2">
+                    <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">CPL Medio</p>
+                    <p class="text-base font-bold text-white">${totalLeads > 0 ? formatCurrency(avgCpl) : '—'}
+                        ${cplTargets && totalLeads > 0 ? (() => { const cls = classifyCpl(avgCpl, cplTargets); return ` <span class="text-[9px] font-bold text-${cls.color}-400">${cls.label}</span>`; })() : ''}
+                    </p>
+                </div>
+                <div class="bg-background-dark border border-border-dark rounded-lg p-3 analyst-card-enter" style="--delay:3">
+                    <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">CTR Medio</p>
+                    <p class="text-base font-bold text-white">${avgCtr.toFixed(2)}%</p>
+                </div>
+            </div>
+
+            <!-- Alert Summary -->
+            ${criticalCount > 0 || warningCount > 0 ? `
+                <div class="flex flex-wrap items-center gap-2 mb-4">
+                    ${criticalCount > 0 ? `<span class="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>${criticalCount} critico(s)</span>` : ''}
+                    ${warningCount > 0 ? `<span class="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>${warningCount} atencao</span>` : ''}
+                    ${successCount > 0 ? `<span class="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>${successCount} saudavel</span>` : ''}
+                </div>
+            ` : ''}
+
+            ${!cplTargets ? `
+                <div class="flex items-center gap-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/15 mb-5">
+                    <span class="material-symbols-outlined text-amber-400 text-base">info</span>
+                    <p class="text-[11px] text-slate-400"><strong class="text-amber-300">Faixas de CPL nao configuradas</strong> — Defina no cadastro do cliente para obter diagnosticos de CPL e recomendacoes de escala.</p>
+                </div>
+            ` : ''}
+
+            <!-- Section Navigation -->
+            <div class="flex flex-wrap gap-1.5 mb-5 pb-4 border-b border-border-dark/50">
+                ${sections.map(s => `
+                    <button onclick="scrollToAnalystSection('${s.id}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium bg-surface-dark border border-border-dark text-slate-400 hover:text-white hover:border-slate-600 transition-colors">
+                        <span class="material-symbols-outlined text-xs">${s.icon}</span>
+                        ${s.label}
+                        <span class="text-[9px] px-1.5 py-px rounded-full ${s.badge === 'red' ? 'bg-red-500/15 text-red-400' : s.badge === 'amber' ? 'bg-amber-500/15 text-amber-400' : 'bg-slate-500/15 text-slate-500'}">${s.count}</span>
+                    </button>
+                `).join('')}
             </div>
     `;
 
-    // Aviso se CPL não configurado
-    if (!cplTargets) {
+    // ======= SECAO 1: CENARIO ATUAL =======
+    if (scenario.length > 0) {
         html += `
-            <div class="flex items-start gap-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/15 mb-4">
-                <span class="material-symbols-outlined text-amber-400 text-lg mt-0.5">info</span>
-                <div>
-                    <p class="text-xs font-semibold text-amber-300">Faixas de CPL nao configuradas</p>
-                    <p class="text-[11px] text-slate-400 mt-0.5">Acesse Gerenciar Clientes e defina as faixas de CPL para obter diagnosticos mais completos sobre custo por lead.</p>
+            <div id="analyst-section-cenario" class="mb-6 scroll-mt-4">
+                <button onclick="toggleAnalystSection('cenario')" class="w-full flex items-center gap-3 mb-3 group cursor-pointer">
+                    <span class="text-[10px] font-bold text-primary/40 tabular-nums">01</span>
+                    <span class="material-symbols-outlined text-sm text-primary">analytics</span>
+                    <h4 class="text-xs font-bold text-slate-300 uppercase tracking-widest">Analise do Cenario Atual</h4>
+                    <div class="flex-1 h-px bg-border-dark/50 ml-2"></div>
+                    <span id="analyst-chevron-cenario" class="material-symbols-outlined text-base text-slate-600 transition-transform duration-200">expand_more</span>
+                </button>
+                <div id="analyst-body-cenario" class="space-y-2 overflow-hidden">
+                    ${scenario.map((s, i) => `
+                        <div class="bg-background-dark/50 border border-border-dark/50 rounded-xl p-3.5 analyst-card-enter" style="--delay:${i}">
+                            <div class="flex items-start gap-3">
+                                <div class="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                                    <span class="material-symbols-outlined text-primary text-sm">${s.icon}</span>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-semibold text-white mb-1.5">${s.title}</p>
+                                    ${formatAnalystSteps(s.text)}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
                 </div>
             </div>
         `;
     }
 
-    html += `</div>`;
+    // ======= SECAO 2: DIAGNOSTICO =======
+    html += `
+        <div id="analyst-section-diagnostico" class="mb-6 scroll-mt-4">
+            <button onclick="toggleAnalystSection('diagnostico')" class="w-full flex items-center gap-3 mb-3 group cursor-pointer">
+                <span class="text-[10px] font-bold text-primary/40 tabular-nums">${scenario.length > 0 ? '02' : '01'}</span>
+                <span class="material-symbols-outlined text-sm text-primary">diagnosis</span>
+                <h4 class="text-xs font-bold text-slate-300 uppercase tracking-widest">Diagnostico Estrategico</h4>
+                <div class="flex-1 h-px bg-border-dark/50 ml-2"></div>
+                <span id="analyst-chevron-diagnostico" class="material-symbols-outlined text-base text-slate-600 transition-transform duration-200">expand_more</span>
+            </button>
+            <div id="analyst-body-diagnostico" class="overflow-hidden">
+    `;
 
-    // Cards de diagnostico
     if (diagnostics.length === 0) {
         html += `
-            <div class="flex flex-col items-center justify-center py-10 text-slate-500">
-                <span class="material-symbols-outlined text-4xl mb-3 opacity-50">task_alt</span>
-                <p class="text-sm font-medium">Nenhum ponto de atencao encontrado</p>
-                <p class="text-xs text-slate-600 mt-1">Todas as campanhas estao dentro dos parametros esperados.</p>
+            <div class="flex flex-col items-center justify-center py-8 text-slate-500">
+                <div class="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center mb-3">
+                    <span class="material-symbols-outlined text-emerald-400 text-xl">task_alt</span>
+                </div>
+                <p class="text-xs font-medium text-slate-400">Nenhum ponto critico identificado</p>
+                <p class="text-[10px] text-slate-600 mt-1">Todas as campanhas dentro dos parametros</p>
             </div>
         `;
     } else {
         html += '<div class="space-y-3">';
-        diagnostics.forEach(d => {
+        diagnostics.forEach((d, idx) => {
             const cfg = severityConfig[d.severity];
             html += `
-                <div class="${cfg.bg} border ${cfg.border} rounded-xl p-4">
+                <div class="${cfg.bg} border ${cfg.border} rounded-xl p-4 analyst-card-enter" style="--delay:${idx}">
                     <div class="flex items-start gap-3">
-                        <span class="material-symbols-outlined ${cfg.iconColor} text-xl mt-0.5 shrink-0">${d.icon}</span>
+                        <div class="w-8 h-8 rounded-lg ${cfg.badgeBg} flex items-center justify-center shrink-0 mt-0.5">
+                            <span class="material-symbols-outlined ${cfg.iconColor} text-base">${d.icon}</span>
+                        </div>
                         <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-2 mb-1">
+                            <div class="flex items-center gap-2 mb-1.5">
                                 <h4 class="text-sm font-bold text-white">${d.title}</h4>
-                                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded ${cfg.badgeBg} ${cfg.badgeText} uppercase">${cfg.label}</span>
+                                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full ${cfg.badgeBg} ${cfg.badgeText} uppercase tracking-wide">${cfg.label}</span>
                             </div>
-                            <p class="text-xs text-slate-400 leading-relaxed mb-3">${d.description}</p>
+                            <p class="text-[11px] text-slate-400 leading-relaxed mb-3">${d.description}</p>
 
+                            <!-- Campanhas afetadas -->
                             <div class="flex flex-wrap gap-1.5 mb-3">
                                 ${d.campaigns.map(c => `
-                                    <span class="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md bg-background-dark border border-border-dark text-slate-300">
-                                        <span class="font-medium truncate max-w-[150px]">${c.name}</span>
-                                        <span class="text-slate-500">·</span>
+                                    <span class="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-background-dark border border-border-dark/80 text-slate-300 transition-colors hover:border-slate-600">
+                                        <span class="font-medium truncate max-w-[140px]">${c.name}</span>
+                                        <span class="text-slate-600">|</span>
                                         <span class="${cfg.badgeText} font-semibold">${c.detail}</span>
                                     </span>
                                 `).join('')}
                             </div>
 
-                            <div class="flex items-start gap-2 p-2.5 rounded-lg bg-background-dark/60 border border-border-dark/50">
-                                <span class="material-symbols-outlined text-primary text-sm mt-0.5 shrink-0">lightbulb</span>
-                                <p class="text-[11px] text-slate-300 leading-relaxed"><strong class="text-white">Plano de acao:</strong> ${d.action}</p>
+                            <!-- Plano de acao formatado -->
+                            <div class="p-3 rounded-lg bg-background-dark/60 border border-border-dark/50">
+                                <div class="flex items-center gap-1.5 mb-2">
+                                    <span class="material-symbols-outlined text-primary text-xs">lightbulb</span>
+                                    <span class="text-[10px] font-bold text-white uppercase tracking-wider">Plano de acao</span>
+                                </div>
+                                ${formatAnalystSteps(d.action)}
                             </div>
                         </div>
                     </div>
@@ -3034,7 +3336,71 @@ function renderAnalystReport(diagnostics, cplTargets, campaigns) {
         });
         html += '</div>';
     }
+    html += '</div></div>';
 
+    // ======= SECAO 3: PLANO DE ACAO =======
+    if (strategy.length > 0) {
+        const sectionNum = (scenario.length > 0 ? 2 : 1) + 1;
+        html += `
+            <div id="analyst-section-plano" class="mb-6 scroll-mt-4">
+                <button onclick="toggleAnalystSection('plano')" class="w-full flex items-center gap-3 mb-3 group cursor-pointer">
+                    <span class="text-[10px] font-bold text-primary/40 tabular-nums">0${sectionNum}</span>
+                    <span class="material-symbols-outlined text-sm text-primary">target</span>
+                    <h4 class="text-xs font-bold text-slate-300 uppercase tracking-widest">Plano de Acao Detalhado</h4>
+                    <div class="flex-1 h-px bg-border-dark/50 ml-2"></div>
+                    <span id="analyst-chevron-plano" class="material-symbols-outlined text-base text-slate-600 transition-transform duration-200">expand_more</span>
+                </button>
+                <div id="analyst-body-plano" class="space-y-2 overflow-hidden">
+                    ${strategy.map((s, i) => `
+                        <div class="bg-primary/[0.03] border border-primary/10 rounded-xl p-3.5 analyst-card-enter" style="--delay:${i}">
+                            <div class="flex items-start gap-3">
+                                <div class="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                                    <span class="material-symbols-outlined text-primary text-sm">${s.icon}</span>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-semibold text-white mb-1.5">${s.title}</p>
+                                    ${formatAnalystSteps(s.text)}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // ======= SECAO 4: DIRECIONAMENTO AVANCADO =======
+    if (scaling.length > 0) {
+        const sectionNum = (scenario.length > 0 ? 1 : 0) + 1 + (strategy.length > 0 ? 1 : 0) + 1;
+        html += `
+            <div id="analyst-section-escala" class="mb-4 scroll-mt-4">
+                <button onclick="toggleAnalystSection('escala')" class="w-full flex items-center gap-3 mb-3 group cursor-pointer">
+                    <span class="text-[10px] font-bold text-primary/40 tabular-nums">0${sectionNum}</span>
+                    <span class="material-symbols-outlined text-sm text-emerald-400">rocket_launch</span>
+                    <h4 class="text-xs font-bold text-slate-300 uppercase tracking-widest">Direcionamento Avancado</h4>
+                    <div class="flex-1 h-px bg-border-dark/50 ml-2"></div>
+                    <span id="analyst-chevron-escala" class="material-symbols-outlined text-base text-slate-600 transition-transform duration-200">expand_more</span>
+                </button>
+                <div id="analyst-body-escala" class="space-y-2 overflow-hidden">
+                    ${scaling.map((s, i) => `
+                        <div class="bg-emerald-500/[0.03] border border-emerald-500/10 rounded-xl p-3.5 analyst-card-enter" style="--delay:${i}">
+                            <div class="flex items-start gap-3">
+                                <div class="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                                    <span class="material-symbols-outlined text-emerald-400 text-sm">${s.icon}</span>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-semibold text-white mb-1.5">${s.title}</p>
+                                    ${formatAnalystSteps(s.text)}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    html += '</div>'; // close .analyst-report
     content.innerHTML = html;
 }
 
