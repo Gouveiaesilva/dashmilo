@@ -612,6 +612,25 @@ select option {
 }
 
 /* ==========================================
+   RELATORIO - PREVIEW EM TELA
+   ========================================== */
+
+/* Section toggle chevron */
+[id^="report-chevron-"] {
+  transition: transform 0.2s ease;
+}
+
+/* Section body transition */
+[id^="report-body-"] {
+  transition: max-height 0.35s ease, opacity 0.25s ease;
+}
+
+/* Scroll margin for nav pills */
+[id^="report-section-"] {
+  scroll-margin-top: 1rem;
+}
+
+/* ==========================================
    AGENTE ANALISTA - REPORT
    ========================================== */
 

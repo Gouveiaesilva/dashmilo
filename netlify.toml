@@ -5,6 +5,9 @@
 [functions]
   node_bundler = "esbuild"
 
+[functions."weekly-report"]
+  schedule = "@hourly"
+
 # Redirecionar chamadas da API para a função
 [[redirects]]
   from = "/api/*"

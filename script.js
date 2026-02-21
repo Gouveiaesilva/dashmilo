@@ -569,6 +569,28 @@ async function addClientAPI(clientData, adminPassword) {
     }
 }
 
+// Atualizar cliente via API (requer senha admin)
+async function updateClientAPI(clientId, updates, adminPassword) {
+    try {
+        const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
+        const response = await fetch(`${baseUrl}/.netlify/functions/clients`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                password: adminPassword,
+                clientId: clientId,
+                updates: updates
+            })
+        });
+
+        const result = await response.json();
+        return result;
+    } catch (error) {
+        console.error('Erro ao atualizar cliente:', error);
+        return { error: true, message: error.message };
+    }
+}
+
 // Remover cliente via API (requer senha admin)
 async function removeClientAPI(clientId, adminPassword) {
     try {
@@ -682,6 +704,21 @@ function closeClientsModal() {
     const modal = document.getElementById('clientsModal');
     modal.classList.add('hidden');
     modal.classList.remove('flex');
+
+    // Resetar estado de edição ao fechar
+    if (editingClientId) {
+        editingClientId = null;
+        document.getElementById('clientName').value = '';
+        document.getElementById('adAccountId').value = '';
+        document.getElementById('cplExcellent').value = '';
+        document.getElementById('cplHealthy').value = '';
+        document.getElementById('cplWarning').value = '';
+        document.getElementById('cplBandsSection').classList.add('hidden');
+        document.getElementById('cplBandsArrow').style.transform = '';
+        document.getElementById('googleChatWebhook').value = '';
+        updateFormMode();
+        document.querySelectorAll('.client-card').forEach(c => c.classList.remove('ring-2', 'ring-primary/50'));
+    }
 }
 
 // Renderizar lista de clientes a partir da API
@@ -763,7 +800,12 @@ document.addEventListener('DOMContentLoaded', () => {
 function createClientHTML(client) {
     const cplBadge = client.cplTargets
         ? `<span class="inline-flex items-center gap-1 text-[10px] text-emerald-400/70 bg-emerald-400/5 px-1.5 py-0.5 rounded ml-1">
-            <span class="w-1 h-1 bg-emerald-400 rounded-full"></span>CPL configurado
+            <span class="w-1 h-1 bg-emerald-400 rounded-full"></span>CPL
+           </span>`
+        : '';
+    const webhookBadge = client.googleChatWebhook
+        ? `<span class="inline-flex items-center gap-1 text-[10px] text-primary/70 bg-primary/5 px-1.5 py-0.5 rounded ml-1">
+            <span class="material-symbols-outlined" style="font-size:10px">chat</span>Chat
            </span>`
         : '';
     return `
@@ -773,7 +815,7 @@ function createClientHTML(client) {
                     <span class="material-symbols-outlined">store</span>
                 </div>
                 <div class="min-w-0">
-                    <p class="text-sm font-medium text-white truncate">${client.name}${cplBadge}</p>
+                    <p class="text-sm font-medium text-white truncate">${client.name}${cplBadge}${webhookBadge}</p>
                     <p class="text-xs text-slate-500 truncate font-mono">${client.adAccountId}</p>
                 </div>
             </div>
@@ -792,7 +834,10 @@ function createClientHTML(client) {
 // Senha admin da sessão atual (armazenada após login no modal de ajustes)
 let currentAdminPassword = null;
 
-// Adicionar novo cliente
+// Estado de edição de cliente
+let editingClientId = null;
+
+// Adicionar ou atualizar cliente
 async function addClient(event) {
     event.preventDefault();
 
@@ -821,21 +866,39 @@ async function addClient(event) {
     }
 
     // Mostrar loading no botão
-    const submitBtn = event.target.querySelector('button[type="submit"]');
+    const submitBtn = document.getElementById('formSubmitBtn');
     const originalText = submitBtn.innerHTML;
     submitBtn.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span> Salvando...';
     submitBtn.disabled = true;
 
-    const clientData = { name: clientName, adAccountId: adAccountId };
-    if (cplTargets) clientData.cplTargets = cplTargets;
+    let result;
 
-    const result = await addClientAPI(clientData, currentAdminPassword);
+    // Coletar webhook (opcional)
+    const googleChatWebhook = document.getElementById('googleChatWebhook').value.trim() || null;
+
+    if (editingClientId) {
+        // Modo edição: atualizar cliente existente
+        const updates = { name: clientName, adAccountId: adAccountId, cplTargets: cplTargets, googleChatWebhook: googleChatWebhook };
+        result = await updateClientAPI(editingClientId, updates, currentAdminPassword);
+    } else {
+        // Modo criação: adicionar novo cliente
+        const clientData = { name: clientName, adAccountId: adAccountId };
+        if (cplTargets) clientData.cplTargets = cplTargets;
+        if (googleChatWebhook) clientData.googleChatWebhook = googleChatWebhook;
+        result = await addClientAPI(clientData, currentAdminPassword);
+    }
 
     // Restaurar botão
     submitBtn.innerHTML = originalText;
     submitBtn.disabled = false;
 
     if (result.success) {
+        const wasEditing = !!editingClientId;
+
+        // Resetar estado de edição
+        editingClientId = null;
+        updateFormMode();
+
         // Re-renderizar a lista e atualizar filtro
         await renderClientsList();
         await populateClientFilter();
@@ -848,9 +911,10 @@ async function addClient(event) {
         document.getElementById('cplWarning').value = '';
         document.getElementById('cplBandsSection').classList.add('hidden');
         document.getElementById('cplBandsArrow').style.transform = '';
-        document.getElementById('clientName').focus();
+        document.getElementById('cplPreview').classList.add('hidden');
+        document.getElementById('googleChatWebhook').value = '';
 
-        showToast('Cliente adicionado com sucesso!');
+        showToast(wasEditing ? 'Cliente atualizado com sucesso!' : 'Cliente adicionado com sucesso!');
     } else {
         showToast('Erro: ' + (result.message || result.error));
     }
@@ -883,6 +947,9 @@ async function editClient(clientId) {
 
     if (!client) return;
 
+    // Entrar em modo de edição
+    editingClientId = clientId;
+
     // Preencher formulário com dados do cliente
     document.getElementById('clientName').value = client.name;
     document.getElementById('adAccountId').value = client.adAccountId;
@@ -892,7 +959,6 @@ async function editClient(clientId) {
         document.getElementById('cplExcellent').value = client.cplTargets.excellent || '';
         document.getElementById('cplHealthy').value = client.cplTargets.healthy || '';
         document.getElementById('cplWarning').value = client.cplTargets.warning || '';
-        // Abrir a seção de CPL
         document.getElementById('cplBandsSection').classList.remove('hidden');
         document.getElementById('cplBandsArrow').style.transform = 'rotate(180deg)';
     } else {
@@ -901,11 +967,59 @@ async function editClient(clientId) {
         document.getElementById('cplWarning').value = '';
     }
 
-    // Focar no campo nome
-    document.getElementById('clientName').focus();
+    // Preencher webhook
+    document.getElementById('googleChatWebhook').value = client.googleChatWebhook || '';
 
-    // Feedback visual
-    showToast('Edite os dados e clique em Adicionar. O cliente antigo será mantido até você salvar.');
+    updateCplPreview();
+    updateFormMode();
+
+    // Scroll e foco no formulário
+    document.getElementById('clientName').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => document.getElementById('clientName').focus(), 300);
+
+    // Highlight no card sendo editado
+    document.querySelectorAll('.client-card').forEach(c => c.classList.remove('ring-2', 'ring-primary/50'));
+    const card = document.querySelector(`.client-card[data-id="${clientId}"]`);
+    if (card) card.classList.add('ring-2', 'ring-primary/50');
+}
+
+function cancelEditClient() {
+    editingClientId = null;
+
+    // Limpar formulário
+    document.getElementById('clientName').value = '';
+    document.getElementById('adAccountId').value = '';
+    document.getElementById('cplExcellent').value = '';
+    document.getElementById('cplHealthy').value = '';
+    document.getElementById('cplWarning').value = '';
+    document.getElementById('cplBandsSection').classList.add('hidden');
+    document.getElementById('cplBandsArrow').style.transform = '';
+    document.getElementById('cplPreview').classList.add('hidden');
+    document.getElementById('googleChatWebhook').value = '';
+
+    updateFormMode();
+
+    // Remover highlight dos cards
+    document.querySelectorAll('.client-card').forEach(c => c.classList.remove('ring-2', 'ring-primary/50'));
+}
+
+function updateFormMode() {
+    const titleEl = document.getElementById('formTitle');
+    const titleIcon = document.getElementById('formTitleIcon');
+    const submitBtn = document.getElementById('formSubmitBtn');
+    const cancelBtn = document.getElementById('formCancelBtn');
+
+    if (editingClientId) {
+        titleEl.textContent = 'Editar Cliente';
+        titleIcon.textContent = 'edit';
+        submitBtn.innerHTML = '<span class="material-symbols-outlined text-lg">save</span> Salvar Alteracoes';
+        cancelBtn.classList.remove('hidden');
+    } else {
+        titleEl.textContent = 'Adicionar Novo Cliente';
+        titleIcon.textContent = 'add_circle';
+        submitBtn.innerHTML = '<span class="material-symbols-outlined text-lg">add</span> Adicionar Cliente';
+        cancelBtn.classList.add('hidden');
+    }
 }
 
 // Mostrar mensagem de feedback (toast)
@@ -983,6 +1097,7 @@ function updateSelectedClientName() {
 // Callback quando o filtro de cliente muda
 async function onClientFilterChange() {
     updateSelectedClientName();
+    updateSendReportButton();
 
     const select = document.getElementById('clientFilter');
     const selectedOption = select.options[select.selectedIndex];
@@ -1003,6 +1118,57 @@ async function onClientFilterChange() {
     } else {
         currentAdAccountId = null;
         resetDashboard();
+    }
+}
+
+function updateSendReportButton() {
+    const btn = document.getElementById('sendReportBtn');
+    if (!btn) return;
+    const select = document.getElementById('clientFilter');
+    if (!select.value) { btn.classList.add('hidden'); return; }
+    const client = clients.find(c => c.id === select.value);
+    if (client && client.googleChatWebhook) {
+        btn.classList.remove('hidden');
+    } else {
+        btn.classList.add('hidden');
+    }
+}
+
+async function sendManualReport() {
+    const select = document.getElementById('clientFilter');
+    if (!select.value) return;
+
+    const client = clients.find(c => c.id === select.value);
+    if (!client || !client.googleChatWebhook) {
+        showToast('Cliente nao possui webhook configurado', 'error');
+        return;
+    }
+
+    // Determinar periodo ativo
+    let period = 'last_7d';
+    if (currentDateRange) {
+        const start = new Date(currentDateRange.start);
+        const end = new Date(currentDateRange.end);
+        const diffDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        if (diffDays <= 1) period = 'yesterday';
+        else if (diffDays <= 7) period = 'last_7d';
+        else if (diffDays <= 14) period = 'last_14d';
+        else period = 'last_30d';
+    }
+
+    showToast('Enviando relatorio...', 'info');
+
+    try {
+        const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
+        const resp = await fetch(`${baseUrl}/.netlify/functions/weekly-report?clientId=${client.id}&period=${period}`);
+        const data = await resp.json();
+        if (data.success) {
+            showToast('Relatorio enviado para o Google Chat!', 'success');
+        } else {
+            showToast(data.error || 'Erro ao enviar', 'error');
+        }
+    } catch (err) {
+        showToast('Erro ao enviar: ' + err.message, 'error');
     }
 }
 
@@ -1740,6 +1906,7 @@ function switchPanel(panel) {
         if (typeof populateReportClientFilter === 'function') {
             populateReportClientFilter();
         }
+        populateScheduleClientFilter();
     }
 
     // Fechar sidebar no mobile
@@ -3826,4 +3993,243 @@ function buildMiniChart(daily, key, color, format) {
             ${dateSvg}
         </svg>
     `;
+}
+
+// ==========================================
+// ENVIO AUTOMATICO - SCHEDULE MANAGEMENT
+// ==========================================
+
+let scheduleSelectedClientId = null;
+
+function populateScheduleClientFilter() {
+    const sel = document.getElementById('scheduleClientFilter');
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">Selecione um Cliente</option>';
+    (clients || []).forEach(c => {
+        sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+    });
+    if (prev && clients.some(c => c.id === prev)) {
+        sel.value = prev;
+    }
+}
+
+function onScheduleClientChange() {
+    const clientId = document.getElementById('scheduleClientFilter').value;
+    const container = document.getElementById('scheduleRulesContainer');
+    const noWebhook = document.getElementById('scheduleNoWebhook');
+    const rulesDiv = document.getElementById('scheduleRules');
+    const addBtn = document.getElementById('scheduleAddRuleBtn');
+    const actions = document.getElementById('scheduleActions');
+
+    if (!clientId) {
+        container.classList.add('hidden');
+        scheduleSelectedClientId = null;
+        return;
+    }
+
+    scheduleSelectedClientId = clientId;
+    container.classList.remove('hidden');
+
+    const client = clients.find(c => c.id === clientId);
+    if (!client || !client.googleChatWebhook) {
+        noWebhook.classList.remove('hidden');
+        rulesDiv.classList.add('hidden');
+        addBtn.classList.add('hidden');
+        actions.classList.add('hidden');
+        return;
+    }
+
+    noWebhook.classList.add('hidden');
+    rulesDiv.classList.remove('hidden');
+    addBtn.classList.remove('hidden');
+    addBtn.style.display = 'flex';
+    actions.classList.remove('hidden');
+    actions.style.display = 'flex';
+
+    // Render existing schedules
+    rulesDiv.innerHTML = '';
+    const schedules = client.reportSchedules || [];
+    if (schedules.length === 0) {
+        // Add one default rule
+        addScheduleRule();
+    } else {
+        schedules.forEach(sched => addScheduleRule(sched));
+    }
+}
+
+function addScheduleRule(existingData) {
+    const rulesDiv = document.getElementById('scheduleRules');
+    const data = existingData || {
+        id: 'sched_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+        enabled: true,
+        days: ['mon', 'tue', 'wed', 'thu', 'fri'],
+        time: '08:00',
+        period: 'yesterday',
+        includePdfLink: false
+    };
+
+    const dayLabels = {
+        mon: 'Seg', tue: 'Ter', wed: 'Qua', thu: 'Qui', fri: 'Sex', sat: 'Sab', dom: 'Dom'
+    };
+    const dayKeys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'dom'];
+
+    const daysHtml = dayKeys.map(d => {
+        const active = (data.days || []).includes(d);
+        return `<button type="button" data-day="${d}" onclick="toggleScheduleDay(this)"
+            class="schedule-day-btn px-2.5 py-1.5 text-[11px] font-semibold rounded-md border transition-colors ${
+                active
+                    ? 'bg-primary/20 border-primary text-primary'
+                    : 'bg-background-dark border-border-dark text-slate-500 hover:border-slate-500 hover:text-slate-300'
+            }">${dayLabels[d]}</button>`;
+    }).join('');
+
+    const periods = [
+        { value: 'yesterday', label: 'Dia anterior' },
+        { value: 'last_7d', label: 'Ultimos 7 dias' },
+        { value: 'last_14d', label: 'Ultimos 14 dias' },
+        { value: 'last_30d', label: 'Ultimos 30 dias' },
+        { value: 'this_week', label: 'Semana corrente' },
+        { value: 'this_month', label: 'Mes corrente' }
+    ];
+    const periodOptions = periods.map(p =>
+        `<option value="${p.value}" ${data.period === p.value ? 'selected' : ''}>${p.label}</option>`
+    ).join('');
+
+    const ruleHtml = `
+        <div class="schedule-rule bg-background-dark border border-border-dark rounded-xl p-4" data-rule-id="${data.id}">
+            <div class="flex items-center justify-between mb-3">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" ${data.enabled ? 'checked' : ''} class="schedule-enabled w-4 h-4 rounded border-border-dark text-primary focus:ring-primary cursor-pointer accent-[#137fec]">
+                    <span class="text-xs font-semibold text-slate-300">${data.enabled ? 'Ativa' : 'Inativa'}</span>
+                </label>
+                <button onclick="removeScheduleRule('${data.id}')" class="text-slate-600 hover:text-red-400 transition-colors p-1" title="Remover regra">
+                    <span class="material-symbols-outlined text-base">delete</span>
+                </button>
+            </div>
+
+            <div class="space-y-3">
+                <!-- Dias da semana -->
+                <div>
+                    <label class="block text-[10px] font-medium text-slate-500 mb-1.5 uppercase tracking-wider">Dias</label>
+                    <div class="flex flex-wrap gap-1.5">${daysHtml}</div>
+                </div>
+
+                <div class="flex flex-wrap gap-3">
+                    <!-- Horario -->
+                    <div class="flex-1 min-w-[100px]">
+                        <label class="block text-[10px] font-medium text-slate-500 mb-1.5 uppercase tracking-wider">Horario (BRT)</label>
+                        <input type="time" value="${data.time || '08:00'}" class="schedule-time w-full bg-surface-dark border border-border-dark text-slate-300 rounded-lg py-2 px-3 text-sm focus:border-primary">
+                    </div>
+
+                    <!-- Periodo -->
+                    <div class="flex-[2] min-w-[140px]">
+                        <label class="block text-[10px] font-medium text-slate-500 mb-1.5 uppercase tracking-wider">Periodo</label>
+                        <select class="schedule-period w-full bg-surface-dark border border-border-dark text-slate-300 rounded-lg py-2 px-3 text-sm appearance-none focus:border-primary cursor-pointer">
+                            ${periodOptions}
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Incluir link PDF -->
+                <label class="flex items-center gap-2 cursor-pointer pt-1">
+                    <input type="checkbox" ${data.includePdfLink ? 'checked' : ''} class="schedule-pdf w-4 h-4 rounded border-border-dark text-primary focus:ring-primary cursor-pointer accent-[#137fec]">
+                    <span class="text-xs text-slate-400">Incluir link para relatorio PDF</span>
+                </label>
+            </div>
+        </div>
+    `;
+
+    rulesDiv.insertAdjacentHTML('beforeend', ruleHtml);
+
+    // Enable checkbox label update
+    const ruleEl = rulesDiv.querySelector(`[data-rule-id="${data.id}"]`);
+    const enabledCb = ruleEl.querySelector('.schedule-enabled');
+    enabledCb.addEventListener('change', () => {
+        enabledCb.nextElementSibling.textContent = enabledCb.checked ? 'Ativa' : 'Inativa';
+    });
+}
+
+function toggleScheduleDay(btn) {
+    const isActive = btn.classList.contains('bg-primary/20');
+    if (isActive) {
+        btn.classList.remove('bg-primary/20', 'border-primary', 'text-primary');
+        btn.classList.add('bg-background-dark', 'border-border-dark', 'text-slate-500');
+    } else {
+        btn.classList.remove('bg-background-dark', 'border-border-dark', 'text-slate-500');
+        btn.classList.add('bg-primary/20', 'border-primary', 'text-primary');
+    }
+}
+
+function removeScheduleRule(ruleId) {
+    const el = document.querySelector(`[data-rule-id="${ruleId}"]`);
+    if (el) el.remove();
+}
+
+function collectScheduleRules() {
+    const rules = [];
+    document.querySelectorAll('.schedule-rule').forEach(el => {
+        const days = [];
+        el.querySelectorAll('.schedule-day-btn').forEach(btn => {
+            if (btn.classList.contains('bg-primary/20')) {
+                days.push(btn.dataset.day);
+            }
+        });
+        rules.push({
+            id: el.dataset.ruleId,
+            enabled: el.querySelector('.schedule-enabled').checked,
+            days,
+            time: el.querySelector('.schedule-time').value || '08:00',
+            period: el.querySelector('.schedule-period').value || 'yesterday',
+            includePdfLink: el.querySelector('.schedule-pdf').checked
+        });
+    });
+    return rules;
+}
+
+async function saveScheduleConfig() {
+    if (!scheduleSelectedClientId) return;
+
+    const rules = collectScheduleRules();
+
+    try {
+        const result = await updateClientAPI(scheduleSelectedClientId, { reportSchedules: rules }, currentAdminPassword);
+        if (result.success) {
+            // Update local client data
+            const idx = clients.findIndex(c => c.id === scheduleSelectedClientId);
+            if (idx !== -1) clients[idx].reportSchedules = rules;
+            showToast('Configuracao de envio salva com sucesso', 'success');
+        } else {
+            showToast(result.error || 'Erro ao salvar configuracao', 'error');
+        }
+    } catch (err) {
+        showToast('Erro ao salvar configuracao', 'error');
+    }
+}
+
+async function sendTestReport() {
+    if (!scheduleSelectedClientId) return;
+
+    const client = clients.find(c => c.id === scheduleSelectedClientId);
+    if (!client || !client.googleChatWebhook) {
+        showToast('Cliente nao possui webhook configurado', 'error');
+        return;
+    }
+
+    const rules = collectScheduleRules();
+    const period = rules.length > 0 ? rules[0].period : 'yesterday';
+
+    showToast('Enviando relatorio de teste...', 'info');
+
+    try {
+        const resp = await fetch(`/.netlify/functions/weekly-report?clientId=${scheduleSelectedClientId}&period=${period}&test=1`);
+        const data = await resp.json();
+        if (data.success) {
+            showToast('Relatorio enviado para o Google Chat!', 'success');
+        } else {
+            showToast(data.error || 'Erro ao enviar relatorio', 'error');
+        }
+    } catch (err) {
+        showToast('Erro ao enviar relatorio: ' + err.message, 'error');
+    }
 }

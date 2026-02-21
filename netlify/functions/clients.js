@@ -7,7 +7,7 @@ exports.handler = async (event, context) => {
     const headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         'Content-Type': 'application/json'
     };
 
@@ -85,6 +85,8 @@ exports.handler = async (event, context) => {
                 adAccountId: client.adAccountId,
                 color: client.color || getRandomColor(),
                 cplTargets: client.cplTargets || null,
+                googleChatWebhook: client.googleChatWebhook || null,
+                reportSchedules: client.reportSchedules || [],
                 createdAt: new Date().toISOString()
             };
 
@@ -100,6 +102,62 @@ exports.handler = async (event, context) => {
                     success: true,
                     message: 'Cliente adicionado',
                     client: newClient
+                })
+            };
+        }
+
+        // PUT - Atualizar cliente (requer senha admin)
+        if (event.httpMethod === 'PUT') {
+            const body = JSON.parse(event.body || '{}');
+            const { password, clientId, updates } = body;
+
+            const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '123456789';
+            if (password !== ADMIN_PASSWORD) {
+                return {
+                    statusCode: 401,
+                    headers,
+                    body: JSON.stringify({ error: 'Senha incorreta' })
+                };
+            }
+
+            if (!clientId || !updates) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: 'Dados incompletos para atualização' })
+                };
+            }
+
+            const existingData = await store.get(CLIENTS_KEY, { type: "json" });
+            const clients = existingData || [];
+            const index = clients.findIndex(c => c.id === clientId);
+
+            if (index === -1) {
+                return {
+                    statusCode: 404,
+                    headers,
+                    body: JSON.stringify({ error: 'Cliente não encontrado' })
+                };
+            }
+
+            // Atualizar apenas campos permitidos
+            if (updates.name) clients[index].name = updates.name;
+            if (updates.adAccountId) clients[index].adAccountId = updates.adAccountId;
+            if (updates.color) clients[index].color = updates.color;
+            // cplTargets pode ser null (remover) ou objeto
+            if (updates.hasOwnProperty('cplTargets')) clients[index].cplTargets = updates.cplTargets;
+            if (updates.hasOwnProperty('googleChatWebhook')) clients[index].googleChatWebhook = updates.googleChatWebhook;
+            if (updates.hasOwnProperty('reportSchedules')) clients[index].reportSchedules = updates.reportSchedules;
+
+            await store.setJSON(CLIENTS_KEY, clients);
+
+            return {
+                statusCode: 200,
+                headers,
+                body: JSON.stringify({
+                    success: true,
+                    message: 'Cliente atualizado',
+                    client: clients[index]
                 })
             };
         }

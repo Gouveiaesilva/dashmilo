@@ -1,6 +1,9 @@
 // ==========================================
-// RELATORIOS - GERADOR DE PDF
+// RELATORIOS - GERADOR DE RELATORIOS
 // ==========================================
+
+// Dados do preview para export PDF posterior
+var reportPreviewData = null;
 
 // ==========================================
 // INICIALIZACAO E UI
@@ -204,6 +207,27 @@ async function fetchReportData(adAccountId, since, until) {
     };
 }
 
+// Buscar top criativos para o relatorio
+async function fetchReportCreatives(adAccountId, since, until) {
+    try {
+        var baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
+        var formattedId = adAccountId.startsWith('act_') ? adAccountId : 'act_' + adAccountId;
+        var timeRange = JSON.stringify({ since: since, until: until });
+
+        var url = baseUrl + '/.netlify/functions/meta-ads?adAccountId=' + encodeURIComponent(formattedId)
+            + '&action=ad-creatives&limit=10&timeRange=' + encodeURIComponent(timeRange);
+
+        var response = await fetch(url);
+        var result = await response.json();
+
+        if (!response.ok || result.error) return [];
+        return result.creatives || [];
+    } catch (e) {
+        console.error('Erro ao buscar criativos para relatorio:', e);
+        return [];
+    }
+}
+
 // ==========================================
 // COMPARACOES E INSIGHTS
 // ==========================================
@@ -219,10 +243,19 @@ function calcChange(current, previous) {
 function generateInsights(data) {
     var current = data.current;
     var prev = data.prev;
-    var campaigns = data.campaigns;
-    var daily = data.daily;
+    var campaigns = data.campaigns || [];
+    var daily = data.daily || [];
+    var creatives = data.creatives || [];
 
-    var insights = [];
+    var result = {
+        summary: '',
+        analysis: [],        // Insights de analise geral (antigo array)
+        topCampaigns: [],     // Melhores campanhas
+        topCreatives: [],     // Melhores criativos
+        replicar: [],         // O que funcionou
+        melhorar: [],         // Oportunidades de melhoria
+        ajustar: []           // Ajustes necessarios
+    };
 
     // --- Variacoes ---
     var cplChange = calcChange(current.cpl, prev.cpl);
@@ -230,153 +263,191 @@ function generateInsights(data) {
     var spendChange = calcChange(current.spend, prev.spend);
     var impressionsChange = calcChange(current.impressions, prev.impressions);
 
-    // Taxa de conversao (leads por 1000 impressoes)
     var currentCR = current.impressions > 0 ? (current.leads / current.impressions) * 1000 : 0;
     var prevCR = prev.impressions > 0 ? (prev.leads / prev.impressions) * 1000 : 0;
     var crChange = calcChange(currentCR, prevCR);
 
     // ==========================================
-    // 1. DIAGNOSTICO GERAL
+    // RESUMO EXECUTIVO
     // ==========================================
 
     if (current.leads === 0 && current.spend === 0) {
-        insights.push('Nenhum investimento e nenhum lead registrado neste periodo. Verifique se as campanhas estao ativas, se o metodo de pagamento esta operacional e se ha orcamento configurado.');
-        return insights;
+        result.summary = 'Nenhum investimento e nenhum lead registrado neste periodo. Verifique se as campanhas estao ativas e se ha orcamento configurado.';
+        return result;
     }
 
     if (current.leads === 0 && current.spend > 0) {
-        insights.push('Foram investidos ' + fmtCur(current.spend) + ' no periodo, mas nenhum lead foi registrado. Isso pode indicar: (1) problemas no formulario ou pagina de destino, (2) segmentacao de publico inadequada, (3) criativos que atraem cliques mas nao geram conversao. Recomenda-se revisar o funil completo e pausar campanhas sem resultado imediato.');
-        return insights;
+        result.summary = 'Foram investidos ' + fmtCur(current.spend) + ' no periodo sem gerar leads. Recomenda-se revisar o funil completo.';
+        result.ajustar.push({ icon: 'error', title: 'Investimento sem retorno', text: 'Foram investidos ' + fmtCur(current.spend) + ' mas nenhum lead foi registrado. Possíveis causas: problemas no formulario, segmentacao inadequada ou criativos sem conversao. Pause campanhas sem resultado e revise o funil.' });
+        return result;
     }
 
-    // Resumo executivo
-    var resumo = 'Resumo do periodo: investimento de ' + fmtCur(current.spend);
-    resumo += ' (' + fmtVar(spendChange) + ' vs anterior)';
-    resumo += ', ' + Math.round(current.leads) + ' leads gerados';
-    resumo += ' (' + fmtVar(leadsChange) + ')';
-    resumo += ' com CPL de ' + fmtCur(current.cpl);
-    resumo += ' (' + fmtVar(cplChange) + ').';
-    insights.push(resumo);
+    result.summary = 'Investimento de ' + fmtCur(current.spend) + ' (' + fmtVar(spendChange) + ' vs anterior), '
+        + Math.round(current.leads) + ' leads (' + fmtVar(leadsChange) + ') com CPL de '
+        + fmtCur(current.cpl) + ' (' + fmtVar(cplChange) + ').';
 
     // ==========================================
-    // 2. ANALISE DE EFICIENCIA
+    // ANALISE DE EFICIENCIA
     // ==========================================
 
     if (spendChange > 5 && leadsChange < -5) {
-        // Investiu mais, gerou menos
-        insights.push('Alerta de eficiencia: o investimento cresceu ' + Math.abs(spendChange).toFixed(1) + '% mas os leads cairam ' + Math.abs(leadsChange).toFixed(1) + '%. O orcamento adicional nao esta se convertendo em resultados. Recomenda-se: (1) pausar conjuntos de anuncios com CPL acima de ' + fmtCur(current.cpl * 1.5) + ', (2) redistribuir verba para as campanhas mais eficientes, (3) testar novos criativos e copys.');
+        result.ajustar.push({ icon: 'trending_down', title: 'Eficiencia em queda', text: 'O investimento cresceu ' + Math.abs(spendChange).toFixed(1) + '% mas os leads cairam ' + Math.abs(leadsChange).toFixed(1) + '%. O orcamento adicional nao esta se convertendo. Pause conjuntos com CPL acima de ' + fmtCur(current.cpl * 1.5) + ' e redistribua verba para campanhas eficientes.' });
     } else if (spendChange > 10 && leadsChange > 10 && cplChange > 10) {
-        // Escalou mas CPL subiu
-        insights.push('O aumento de ' + Math.abs(spendChange).toFixed(1) + '% no investimento gerou mais ' + Math.abs(leadsChange).toFixed(1) + '% de leads, porem o CPL subiu ' + Math.abs(cplChange).toFixed(1) + '%. Isso e natural na escala, mas merece atencao. Considere manter o orcamento estavel por 3-5 dias para o algoritmo se reotimizar antes de novos aumentos.');
+        result.melhorar.push({ icon: 'speed', title: 'Escala com CPL elevado', text: 'O aumento de ' + Math.abs(spendChange).toFixed(1) + '% gerou +' + Math.abs(leadsChange).toFixed(1) + '% de leads, mas o CPL subiu ' + Math.abs(cplChange).toFixed(1) + '%. Mantenha o orcamento estavel por 3-5 dias para reotimizacao.' });
     } else if (spendChange > 10 && leadsChange > 10 && cplChange <= 5) {
-        // Escala eficiente
-        insights.push('Escala eficiente: o investimento cresceu ' + Math.abs(spendChange).toFixed(1) + '% e os leads acompanharam com +' + Math.abs(leadsChange).toFixed(1) + '% sem impacto significativo no CPL. Ha espaco para continuar aumentando o orcamento gradualmente (10-20% a cada 3 dias).');
+        result.replicar.push({ icon: 'rocket_launch', title: 'Escala eficiente', text: 'Investimento cresceu ' + Math.abs(spendChange).toFixed(1) + '% com +' + Math.abs(leadsChange).toFixed(1) + '% de leads sem impacto no CPL. Ha espaco para continuar escalando gradualmente (10-20% a cada 3 dias).' });
     } else if (cplChange < -15) {
-        // CPL melhorou muito
-        insights.push('O Custo por Lead teve queda de ' + Math.abs(cplChange).toFixed(1) + '% (de ' + fmtCur(prev.cpl) + ' para ' + fmtCur(current.cpl) + '). Esta e uma janela favoravel para aumentar o investimento e capturar mais leads com custo otimizado.');
+        result.replicar.push({ icon: 'savings', title: 'CPL em queda', text: 'O CPL caiu ' + Math.abs(cplChange).toFixed(1) + '% (de ' + fmtCur(prev.cpl) + ' para ' + fmtCur(current.cpl) + '). Janela favoravel para aumentar investimento e capturar mais leads com custo otimizado.' });
     } else if (cplChange > 20) {
-        // CPL piorou muito
-        insights.push('O CPL aumentou ' + Math.abs(cplChange).toFixed(1) + '% (de ' + fmtCur(prev.cpl) + ' para ' + fmtCur(current.cpl) + '). Possíveis causas: saturacao do publico, fadiga de criativo ou aumento de concorrencia no leilao. Recomenda-se renovar criativos, testar novos publicos lookalike e revisar a estrategia de lance.');
+        result.ajustar.push({ icon: 'price_change', title: 'CPL em alta', text: 'O CPL aumentou ' + Math.abs(cplChange).toFixed(1) + '% (de ' + fmtCur(prev.cpl) + ' para ' + fmtCur(current.cpl) + '). Renove criativos, teste novos publicos lookalike e revise a estrategia de lance.' });
     }
 
-    // Taxa de conversao
-    if (currentCR > 0 && Math.abs(crChange) > 15) {
-        if (crChange < -15) {
-            insights.push('A taxa de conversao (leads por impressao) caiu ' + Math.abs(crChange).toFixed(1) + '%. As campanhas estao alcancando o publico, mas a conversao esta mais baixa. Recomenda-se revisar: criativos (oferta clara?), pagina de destino (carregamento rapido? formulario simples?) e segmentacao (o publico e qualificado?).');
-        } else if (crChange > 15) {
-            insights.push('A taxa de conversao melhorou ' + crChange.toFixed(1) + '%. Os anuncios estao mais eficientes em transformar impressoes em leads. Mantenha os criativos atuais e considere ampliar o alcance com publicos semelhantes.');
+    if (currentCR > 0 && crChange < -15) {
+        result.melhorar.push({ icon: 'conversion_path', title: 'Taxa de conversao em queda', text: 'A taxa de conversao caiu ' + Math.abs(crChange).toFixed(1) + '%. Revise criativos, pagina de destino e segmentacao.' });
+    } else if (currentCR > 0 && crChange > 15) {
+        result.replicar.push({ icon: 'trending_up', title: 'Conversao melhorando', text: 'A taxa de conversao melhorou ' + crChange.toFixed(1) + '%. Mantenha os criativos atuais e considere ampliar o alcance com publicos semelhantes.' });
+    }
+
+    // ==========================================
+    // TOP CAMPANHAS
+    // ==========================================
+
+    var campWithLeads = campaigns.filter(function(c) { return c.leads > 0 && c.spend > 0; });
+    campWithLeads.sort(function(a, b) { return a.cpl - b.cpl; });
+
+    var totalLeads = current.leads || campaigns.reduce(function(s, c) { return s + (c.leads || 0); }, 0);
+    var avgCpl = totalLeads > 0 ? current.spend / totalLeads : 0;
+
+    result.topCampaigns = campWithLeads.slice(0, 5).map(function(c) {
+        var share = totalLeads > 0 ? ((c.leads / totalLeads) * 100).toFixed(0) : 0;
+        return { name: c.name, spend: c.spend, leads: c.leads, cpl: c.cpl, share: share };
+    });
+
+    // Campanhas com CPL abaixo da media → replicar
+    campWithLeads.forEach(function(c) {
+        if (c.cpl < avgCpl * 0.8 && c.leads >= 3) {
+            result.replicar.push({ icon: 'star', title: '"' + truncName(c.name, 40) + '" e referencia', text: 'CPL de ' + fmtCur(c.cpl) + ' (' + ((1 - c.cpl / avgCpl) * 100).toFixed(0) + '% abaixo da media). Replique o publico e os criativos desta campanha em novas variações.' });
+        }
+    });
+
+    // Campanhas com gasto e sem leads → ajustar
+    var noLeadCampaigns = campaigns.filter(function(c) { return c.leads === 0 && c.spend > 10; });
+    if (noLeadCampaigns.length > 0) {
+        var wastedSpend = noLeadCampaigns.reduce(function(sum, c) { return sum + c.spend; }, 0);
+        noLeadCampaigns.forEach(function(c) {
+            result.ajustar.push({ icon: 'money_off', title: '"' + truncName(c.name, 40) + '" sem leads', text: 'Gastou ' + fmtCur(c.spend) + ' sem gerar leads. Pause ou reestruture esta campanha.' });
+        });
+    }
+
+    // Disparidade entre campanhas
+    if (campWithLeads.length >= 2) {
+        var best = campWithLeads[0];
+        var worst = campWithLeads[campWithLeads.length - 1];
+        if (worst.cpl > best.cpl * 2) {
+            result.melhorar.push({ icon: 'swap_vert', title: 'Disparidade de CPL entre campanhas', text: '"' + truncName(best.name, 30) + '" tem CPL de ' + fmtCur(best.cpl) + ' enquanto "' + truncName(worst.name, 30) + '" opera a ' + fmtCur(worst.cpl) + ' (' + (worst.cpl / best.cpl).toFixed(1) + 'x mais caro). Considere realocar orcamento.' });
+        }
+    }
+
+    // Concentracao de leads
+    if (campWithLeads.length >= 3 && totalLeads > 0) {
+        var topByLeads = campWithLeads.slice().sort(function(a, b) { return b.leads - a.leads; })[0];
+        var leadShare = (topByLeads.leads / totalLeads) * 100;
+        if (leadShare > 70) {
+            result.ajustar.push({ icon: 'warning', title: 'Concentracao de leads', text: leadShare.toFixed(0) + '% dos leads vem de "' + truncName(topByLeads.name, 35) + '". Diversifique com novos angulos de comunicacao e publicos diferentes.' });
         }
     }
 
     // ==========================================
-    // 3. ANALISE DE CAMPANHAS
+    // TOP CRIATIVOS
     // ==========================================
 
-    if (campaigns.length > 1) {
-        // Ordenar por CPL (melhor para pior)
-        var activeCampaigns = campaigns.filter(function(c) { return c.leads > 0 && c.spend > 0; });
+    var creativesWithLeads = creatives.filter(function(c) {
+        return c.metrics && c.metrics.leads > 0 && c.metrics.spend > 0;
+    });
+    creativesWithLeads.sort(function(a, b) { return a.metrics.cpl - b.metrics.cpl; });
 
-        if (activeCampaigns.length > 1) {
-            activeCampaigns.sort(function(a, b) { return a.cpl - b.cpl; });
+    var avgCreativeCtr = creatives.length > 0
+        ? creatives.reduce(function(s, c) { return s + (c.metrics ? c.metrics.ctr : 0); }, 0) / creatives.length
+        : 0;
 
-            var best = activeCampaigns[0];
-            var worst = activeCampaigns[activeCampaigns.length - 1];
+    result.topCreatives = creativesWithLeads.slice(0, 5).map(function(c) {
+        return {
+            name: c.name,
+            spend: c.metrics.spend,
+            leads: c.metrics.leads,
+            cpl: c.metrics.cpl,
+            ctr: c.metrics.ctr,
+            impressions: c.metrics.impressions,
+            thumbnailUrl: c.thumbnailUrl || null,
+            isVideo: c.isVideo || false
+        };
+    });
 
-            if (worst.cpl > best.cpl * 2 && activeCampaigns.length >= 2) {
-                // Grande disparidade entre campanhas
-                insights.push('Disparidade entre campanhas: "' + truncName(best.name) + '" tem CPL de ' + fmtCur(best.cpl) + ' enquanto "' + truncName(worst.name) + '" opera a ' + fmtCur(worst.cpl) + ' (' + (worst.cpl / best.cpl).toFixed(1) + 'x mais caro). Considere realocar orcamento da campanha menos eficiente para a mais eficiente, ou revisar a segmentacao e criativos da campanha com CPL elevado.');
-            }
-
-            // Campanhas com custo mas sem leads
-            var noLeadCampaigns = campaigns.filter(function(c) { return c.leads === 0 && c.spend > 10; });
-            if (noLeadCampaigns.length > 0) {
-                var wastedSpend = noLeadCampaigns.reduce(function(sum, c) { return sum + c.spend; }, 0);
-                var names = noLeadCampaigns.slice(0, 2).map(function(c) { return '"' + truncName(c.name) + '"'; }).join(' e ');
-                insights.push('Atencao: ' + (noLeadCampaigns.length === 1 ? 'a campanha ' : noLeadCampaigns.length + ' campanhas, incluindo ') + names + ', consumiram ' + fmtCur(wastedSpend) + ' sem gerar leads. Avalie pausar ou reestruturar essas campanhas para evitar desperdicio de verba.');
-            }
-
-            // Concentracao de leads
-            if (activeCampaigns.length >= 3) {
-                var topCampaign = activeCampaigns.sort(function(a, b) { return b.leads - a.leads; })[0];
-                var leadShare = (topCampaign.leads / current.leads) * 100;
-                if (leadShare > 70) {
-                    insights.push('Risco de concentracao: ' + leadShare.toFixed(0) + '% dos leads vem de uma unica campanha ("' + truncName(topCampaign.name) + '"). Se essa campanha perder performance, o impacto sera significativo. Recomenda-se diversificar criando novos angulos de comunicacao e testando publicos diferentes em campanhas paralelas.');
-                }
-            }
+    // Criativos com bom CTR → replicar
+    creativesWithLeads.forEach(function(c) {
+        if (c.metrics.ctr > avgCreativeCtr * 1.3 && c.metrics.leads >= 2) {
+            result.replicar.push({ icon: 'thumb_up', title: 'Criativo com alto engajamento', text: '"' + truncName(c.name, 40) + '" tem CTR de ' + c.metrics.ctr.toFixed(2) + '% (acima da media). Replique o formato e o angulo de comunicacao deste criativo.' });
         }
+    });
+
+    // Criativos com muitas impressoes mas poucos leads → melhorar
+    creatives.forEach(function(c) {
+        if (c.metrics && c.metrics.impressions > 1000 && c.metrics.leads === 0 && c.metrics.spend > 10) {
+            result.melhorar.push({ icon: 'visibility', title: 'Criativo com alcance sem conversao', text: '"' + truncName(c.name, 40) + '" teve ' + Math.round(c.metrics.impressions).toLocaleString('pt-BR') + ' impressoes mas 0 leads. Ajuste o CTA ou a oferta.' });
+        }
+    });
+
+    // Criativos com CPL > 2x da media → ajustar
+    if (avgCpl > 0) {
+        creativesWithLeads.forEach(function(c) {
+            if (c.metrics.cpl > avgCpl * 2 && c.metrics.spend > 20) {
+                result.ajustar.push({ icon: 'swap_horiz', title: 'Criativo com CPL elevado', text: '"' + truncName(c.name, 40) + '" opera com CPL de ' + fmtCur(c.metrics.cpl) + ' (' + (c.metrics.cpl / avgCpl).toFixed(1) + 'x a media). Substitua este criativo.' });
+            }
+        });
     }
 
     // ==========================================
-    // 4. ANALISE DE TENDENCIA DIARIA
+    // TENDENCIA DIARIA
     // ==========================================
 
     if (daily.length >= 4) {
         var halfIdx = Math.floor(daily.length / 2);
         var firstHalf = daily.slice(0, halfIdx);
         var secondHalf = daily.slice(halfIdx);
-
         var firstHalfCPL = calcDailyAvgCPL(firstHalf);
         var secondHalfCPL = calcDailyAvgCPL(secondHalf);
-        var firstHalfLeads = firstHalf.reduce(function(s, d) { return s + (d.leads || 0); }, 0);
-        var secondHalfLeads = secondHalf.reduce(function(s, d) { return s + (d.leads || 0); }, 0);
 
         if (firstHalfCPL > 0 && secondHalfCPL > 0) {
             var trendCPL = calcChange(secondHalfCPL, firstHalfCPL);
-
             if (trendCPL > 20) {
-                insights.push('Tendencia de piora dentro do periodo: o CPL da segunda metade (' + fmtCur(secondHalfCPL) + ') esta ' + Math.abs(trendCPL).toFixed(0) + '% acima da primeira metade (' + fmtCur(firstHalfCPL) + '). Isso pode indicar fadiga de criativo ou saturacao de publico. Providencie novos criativos o quanto antes.');
+                result.ajustar.push({ icon: 'show_chart', title: 'Tendencia de piora no periodo', text: 'O CPL da segunda metade (' + fmtCur(secondHalfCPL) + ') esta ' + Math.abs(trendCPL).toFixed(0) + '% acima da primeira metade (' + fmtCur(firstHalfCPL) + '). Possível fadiga de criativo.' });
             } else if (trendCPL < -20) {
-                insights.push('Tendencia de melhora dentro do periodo: o CPL da segunda metade (' + fmtCur(secondHalfCPL) + ') caiu ' + Math.abs(trendCPL).toFixed(0) + '% em relacao a primeira metade (' + fmtCur(firstHalfCPL) + '). O algoritmo esta otimizando bem a entrega. Evite fazer alteracoes bruscas neste momento.');
+                result.replicar.push({ icon: 'auto_graph', title: 'Tendencia de melhora', text: 'O CPL da segunda metade (' + fmtCur(secondHalfCPL) + ') caiu ' + Math.abs(trendCPL).toFixed(0) + '% vs primeira metade. O algoritmo esta otimizando bem. Evite alteracoes bruscas.' });
             }
         }
 
-        // Dias sem leads
         var zeroLeadDays = daily.filter(function(d) { return (d.leads || 0) === 0 && (d.spend || 0) > 0; }).length;
         if (zeroLeadDays > 0 && daily.length >= 7) {
             var pct = ((zeroLeadDays / daily.length) * 100).toFixed(0);
-            insights.push('Em ' + zeroLeadDays + ' de ' + daily.length + ' dias (' + pct + '%), houve investimento sem gerar nenhum lead. Considere estabelecer regras de orcamento minimo diario e desativar automaticamente conjuntos que passem 2 dias consecutivos sem conversao.');
+            result.melhorar.push({ icon: 'calendar_today', title: 'Dias sem conversao', text: 'Em ' + zeroLeadDays + ' de ' + daily.length + ' dias (' + pct + '%) houve investimento sem leads. Estabeleca regras de orcamento minimo e desative conjuntos com 2+ dias sem conversao.' });
         }
     }
 
-    // ==========================================
-    // 5. IMPRESSOES E ALCANCE
-    // ==========================================
-
+    // IMPRESSOES
     if (impressionsChange < -25) {
-        insights.push('As impressoes cairam ' + Math.abs(impressionsChange).toFixed(1) + '% em relacao ao periodo anterior. Possivel causa: restricao orcamentaria, publico muito restrito ou queda no indice de qualidade dos anuncios. Revise o limite de gasto diario e amplie a segmentacao se o publico estiver muito nichado.');
+        result.melhorar.push({ icon: 'visibility_off', title: 'Queda de impressoes', text: 'Impressoes cairam ' + Math.abs(impressionsChange).toFixed(1) + '%. Revise limite de gasto diario e amplie segmentacao.' });
     } else if (impressionsChange > 30 && leadsChange < 5) {
-        insights.push('As impressoes cresceram ' + impressionsChange.toFixed(1) + '% mas os leads nao acompanharam (' + fmtVar(leadsChange) + '). O alcance esta maior, porem o publico adicional nao e qualificado. Recomenda-se refinar a segmentacao priorizando conversao sobre alcance.');
+        result.melhorar.push({ icon: 'group_off', title: 'Alcance sem conversao', text: 'Impressoes cresceram ' + impressionsChange.toFixed(1) + '% mas leads nao acompanharam. Refine segmentacao priorizando conversao.' });
     }
 
-    // ==========================================
-    // 6. FECHAMENTO — garantir minimo de insights
-    // ==========================================
+    // Compatibilidade: gerar array analysis para o PDF antigo
+    result.analysis = [];
+    result.analysis.push(result.summary);
+    result.replicar.forEach(function(item) { result.analysis.push(item.text); });
+    result.melhorar.forEach(function(item) { result.analysis.push(item.text); });
+    result.ajustar.forEach(function(item) { result.analysis.push(item.text); });
 
-    if (insights.length <= 1) {
-        insights.push('A performance do periodo se manteve estavel em relacao ao anterior. Mantenha a estrategia atual e acompanhe os proximos dias para identificar oportunidades de otimizacao incremental.');
-    }
-
-    return insights;
+    return result;
 }
 
 // Auxiliares de formatacao para insights
@@ -390,9 +461,10 @@ function fmtVar(change) {
     return arrow + change.toFixed(1) + '%';
 }
 
-function truncName(name) {
+function truncName(name, maxLen) {
     if (!name) return '';
-    return name.length > 45 ? name.substring(0, 42) + '...' : name;
+    maxLen = maxLen || 45;
+    return name.length > maxLen ? name.substring(0, maxLen - 3) + '...' : name;
 }
 
 function calcDailyAvgCPL(days) {
@@ -449,6 +521,11 @@ async function generateReport() {
     var progressBar = document.getElementById('reportProgressBar');
     var progressText = document.getElementById('reportProgressText');
     var generateBtn = document.getElementById('generateReportBtn');
+    var previewEl = document.getElementById('reportPreview');
+
+    // Esconder preview anterior
+    previewEl.classList.add('hidden');
+    previewEl.innerHTML = '';
 
     progressEl.classList.remove('hidden');
     generateBtn.disabled = true;
@@ -457,52 +534,51 @@ async function generateReport() {
         // 1. Calcular periodo de comparacao
         progressText.textContent = 'Calculando periodos...';
         progressBar.style.width = '5%';
-
         var prevPeriod = getPreviousPeriod(period.since, period.until);
 
-        // 2. Buscar dados do periodo do relatorio
+        // 2. Buscar dados em paralelo
         progressText.textContent = 'Buscando dados do periodo...';
         progressBar.style.width = '15%';
-        var reportData = await fetchReportData(adAccountId, period.since, period.until);
 
-        // 3. Buscar dados do periodo anterior
-        progressText.textContent = 'Buscando dados do periodo anterior...';
-        progressBar.style.width = '50%';
-        var prevData = await fetchReportData(adAccountId, prevPeriod.since, prevPeriod.until);
+        var [reportData, prevData, creatives] = await Promise.all([
+            fetchReportData(adAccountId, period.since, period.until),
+            fetchReportData(adAccountId, prevPeriod.since, prevPeriod.until),
+            fetchReportCreatives(adAccountId, period.since, period.until)
+        ]);
 
-        // 4. Gerar insights
+        progressBar.style.width = '70%';
+
+        // 3. Gerar insights expandidos
         progressText.textContent = 'Analisando performance...';
-        progressBar.style.width = '75%';
+        progressBar.style.width = '80%';
         var insights = generateInsights({
             current: reportData.summary,
             prev: prevData.summary,
             campaigns: reportData.campaigns || [],
             daily: reportData.daily || [],
+            creatives: creatives,
             period: period
         });
 
-        // 5. Carregar logo
-        progressText.textContent = 'Carregando logo...';
-        progressBar.style.width = '85%';
-        var logoData = await loadLogoAsBase64();
-
-        // 6. Gerar PDF
-        progressText.textContent = 'Gerando PDF...';
+        // 4. Guardar dados para export PDF posterior
         progressBar.style.width = '90%';
-
-        buildReportPDF({
+        reportPreviewData = {
             clientName: clientName,
             period: period,
             prevPeriod: prevPeriod,
             reportData: reportData,
             prevData: prevData,
             insights: insights,
-            logoData: logoData
-        });
+            creatives: creatives
+        };
+
+        // 5. Renderizar preview em tela
+        progressText.textContent = 'Preparando visualizacao...';
+        progressBar.style.width = '95%';
+        renderReportPreview(reportPreviewData);
 
         progressBar.style.width = '100%';
-        progressText.textContent = 'Relatorio gerado com sucesso!';
-        showToast('Relatorio PDF gerado com sucesso!');
+        progressText.textContent = 'Relatorio pronto!';
 
     } catch (error) {
         console.error('Erro ao gerar relatorio:', error);
@@ -513,7 +589,302 @@ async function generateReport() {
         setTimeout(function() {
             progressEl.classList.add('hidden');
             progressBar.style.width = '0%';
-        }, 3000);
+        }, 2000);
+    }
+}
+
+// Exportar PDF a partir do preview
+async function exportReportPDF() {
+    if (!reportPreviewData) {
+        showToast('Gere o relatorio primeiro.');
+        return;
+    }
+
+    var btn = document.getElementById('reportExportPDFBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-sm">progress_activity</span> Gerando...';
+    }
+
+    try {
+        var logoData = await loadLogoAsBase64();
+        buildReportPDF({
+            clientName: reportPreviewData.clientName,
+            period: reportPreviewData.period,
+            prevPeriod: reportPreviewData.prevPeriod,
+            reportData: reportPreviewData.reportData,
+            prevData: reportPreviewData.prevData,
+            insights: reportPreviewData.insights,
+            logoData: logoData
+        });
+        showToast('PDF exportado com sucesso!');
+    } catch (error) {
+        showToast('Erro ao exportar PDF: ' + error.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<span class="material-symbols-outlined text-sm">picture_as_pdf</span> Exportar PDF';
+        }
+    }
+}
+
+// ==========================================
+// PREVIEW EM TELA (estilo analista)
+// ==========================================
+
+function renderReportPreview(data) {
+    var container = document.getElementById('reportPreview');
+    var current = data.reportData.summary;
+    var prev = data.prevData.summary;
+    var insights = data.insights;
+
+    var spendChange = calcChange(current.spend, prev.spend);
+    var leadsChange = calcChange(current.leads, prev.leads);
+    var cplChange = calcChange(current.cpl, prev.cpl);
+    var impressionsChange = calcChange(current.impressions, prev.impressions);
+
+    function changeClass(val, invert) {
+        if (Math.abs(val) < 1) return 'text-slate-400';
+        var good = invert ? val < 0 : val > 0;
+        return good ? 'text-emerald-400' : 'text-red-400';
+    }
+
+    function changeArrow(val) {
+        if (Math.abs(val) < 1) return '';
+        return val > 0 ? 'arrow_upward' : 'arrow_downward';
+    }
+
+    // Secoes dinâmicas
+    var sections = [];
+    sections.push({ id: 'resumo', num: '01', label: 'Resumo Executivo', icon: 'summarize', color: 'primary' });
+    if (insights.topCampaigns.length > 0) sections.push({ id: 'campanhas', num: String(sections.length + 1).padStart(2, '0'), label: 'Melhores Campanhas', icon: 'military_tech', color: 'amber' });
+    if (insights.topCreatives.length > 0) sections.push({ id: 'criativos', num: String(sections.length + 1).padStart(2, '0'), label: 'Melhores Criativos', icon: 'palette', color: 'violet' });
+    if (insights.replicar.length > 0) sections.push({ id: 'replicar', num: String(sections.length + 1).padStart(2, '0'), label: 'O Que Funcionou', icon: 'check_circle', color: 'emerald' });
+    if (insights.melhorar.length > 0) sections.push({ id: 'melhorar', num: String(sections.length + 1).padStart(2, '0'), label: 'Oportunidades de Melhoria', icon: 'trending_up', color: 'amber' });
+    if (insights.ajustar.length > 0) sections.push({ id: 'ajustar', num: String(sections.length + 1).padStart(2, '0'), label: 'Ajustes Necessarios', icon: 'warning', color: 'red' });
+
+    var html = '<div class="report-preview">';
+
+    // ======= HEADER =======
+    html += '\
+        <div class="bg-surface-dark border border-border-dark rounded-xl p-4 sm:p-6">\
+            <div class="flex items-start justify-between gap-4 mb-5">\
+                <div class="flex-1 min-w-0">\
+                    <div class="flex items-center gap-2 mb-1">\
+                        <span class="material-symbols-outlined text-primary text-xl">assessment</span>\
+                        <h3 class="text-base font-bold text-white">Relatorio de Performance</h3>\
+                    </div>\
+                    <p class="text-[11px] text-slate-500">' + data.clientName + ' &middot; '
+                        + formatDateBR(data.period.since) + ' a ' + formatDateBR(data.period.until)
+                        + ' &middot; vs periodo anterior</p>\
+                </div>\
+                <button id="reportExportPDFBtn" onclick="exportReportPDF()" class="shrink-0 flex items-center gap-1.5 px-3.5 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-xs font-semibold transition-all hover:scale-[1.02] active:scale-95">\
+                    <span class="material-symbols-outlined text-sm">picture_as_pdf</span>\
+                    Exportar PDF\
+                </button>\
+            </div>';
+
+    // ======= KPIs =======
+    html += '\
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">\
+                <div class="bg-background-dark border border-border-dark rounded-lg p-3 analyst-card-enter" style="--delay:0">\
+                    <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Investimento</p>\
+                    <p class="text-base font-bold text-white">' + fmtCur(current.spend) + '</p>\
+                    <div class="flex items-center gap-1 mt-0.5">\
+                        <span class="material-symbols-outlined text-xs ' + changeClass(spendChange) + '">' + changeArrow(spendChange) + '</span>\
+                        <span class="text-[10px] ' + changeClass(spendChange) + '">' + fmtVar(spendChange) + '</span>\
+                    </div>\
+                </div>\
+                <div class="bg-background-dark border border-border-dark rounded-lg p-3 analyst-card-enter" style="--delay:1">\
+                    <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Leads</p>\
+                    <p class="text-base font-bold text-white">' + Math.round(current.leads) + '</p>\
+                    <div class="flex items-center gap-1 mt-0.5">\
+                        <span class="material-symbols-outlined text-xs ' + changeClass(leadsChange) + '">' + changeArrow(leadsChange) + '</span>\
+                        <span class="text-[10px] ' + changeClass(leadsChange) + '">' + fmtVar(leadsChange) + '</span>\
+                    </div>\
+                </div>\
+                <div class="bg-background-dark border border-border-dark rounded-lg p-3 analyst-card-enter" style="--delay:2">\
+                    <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">CPL</p>\
+                    <p class="text-base font-bold text-white">' + fmtCur(current.cpl) + '</p>\
+                    <div class="flex items-center gap-1 mt-0.5">\
+                        <span class="material-symbols-outlined text-xs ' + changeClass(cplChange, true) + '">' + changeArrow(cplChange) + '</span>\
+                        <span class="text-[10px] ' + changeClass(cplChange, true) + '">' + fmtVar(cplChange) + '</span>\
+                    </div>\
+                </div>\
+                <div class="bg-background-dark border border-border-dark rounded-lg p-3 analyst-card-enter" style="--delay:3">\
+                    <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Impressoes</p>\
+                    <p class="text-base font-bold text-white">' + Number(current.impressions).toLocaleString('pt-BR') + '</p>\
+                    <div class="flex items-center gap-1 mt-0.5">\
+                        <span class="material-symbols-outlined text-xs ' + changeClass(impressionsChange) + '">' + changeArrow(impressionsChange) + '</span>\
+                        <span class="text-[10px] ' + changeClass(impressionsChange) + '">' + fmtVar(impressionsChange) + '</span>\
+                    </div>\
+                </div>\
+            </div>';
+
+    // ======= SECTION NAV PILLS =======
+    html += '<div class="flex flex-wrap gap-1.5 mb-4">';
+    sections.forEach(function(s) {
+        html += '<button onclick="scrollToReportSection(\'' + s.id + '\')" class="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-' + s.color + '-500/5 text-' + s.color + '-400 border border-' + s.color + '-500/10 hover:bg-' + s.color + '-500/10 transition-colors">\
+            <span class="material-symbols-outlined" style="font-size:12px">' + s.icon + '</span>' + s.label + '</button>';
+    });
+    html += '</div>';
+
+    html += '</div>';
+
+    // ======= SECTIONS =======
+    var sIdx = 0;
+
+    // 01. Resumo
+    html += buildReportSection('resumo', sections[sIdx].num, 'Resumo Executivo', 'summarize', 'primary',
+        '<p class="text-sm text-slate-300 leading-relaxed">' + insights.summary + '</p>', true);
+    sIdx++;
+
+    // 02. Melhores Campanhas
+    if (insights.topCampaigns.length > 0) {
+        var campHTML = '<div class="space-y-2">';
+        insights.topCampaigns.forEach(function(c, i) {
+            var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '<span class="text-slate-500 text-xs font-bold">#' + (i + 1) + '</span>';
+            campHTML += '\
+                <div class="flex items-center gap-3 p-3 bg-background-dark border border-border-dark rounded-lg analyst-card-enter" style="--delay:' + i + '">\
+                    <span class="text-lg shrink-0 w-6 text-center">' + medal + '</span>\
+                    <div class="flex-1 min-w-0">\
+                        <p class="text-sm font-medium text-white truncate">' + c.name + '</p>\
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">\
+                            <span class="text-[10px] text-slate-500">Invest: <strong class="text-slate-300">' + fmtCur(c.spend) + '</strong></span>\
+                            <span class="text-[10px] text-slate-500">Leads: <strong class="text-slate-300">' + c.leads + '</strong></span>\
+                            <span class="text-[10px] text-slate-500">CPL: <strong class="text-emerald-400">' + fmtCur(c.cpl) + '</strong></span>\
+                            <span class="text-[10px] text-slate-500">' + c.share + '% dos leads</span>\
+                        </div>\
+                    </div>\
+                </div>';
+        });
+        campHTML += '</div>';
+        html += buildReportSection('campanhas', sections[sIdx].num, 'Melhores Campanhas', 'military_tech', 'amber', campHTML, true);
+        sIdx++;
+    }
+
+    // 03. Melhores Criativos
+    if (insights.topCreatives.length > 0) {
+        var crHTML = '<div class="space-y-2">';
+        insights.topCreatives.forEach(function(c, i) {
+            var thumbHTML = c.thumbnailUrl
+                ? '<img src="' + c.thumbnailUrl + '" class="w-12 h-12 rounded-lg object-cover shrink-0" onerror="this.style.display=\'none\'" />'
+                : '<div class="w-12 h-12 bg-slate-700/30 rounded-lg flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-slate-600 text-lg">' + (c.isVideo ? 'videocam' : 'image') + '</span></div>';
+
+            crHTML += '\
+                <div class="flex items-center gap-3 p-3 bg-background-dark border border-border-dark rounded-lg analyst-card-enter" style="--delay:' + i + '">\
+                    ' + thumbHTML + '\
+                    <div class="flex-1 min-w-0">\
+                        <p class="text-sm font-medium text-white truncate">' + (c.name || 'Criativo #' + (i + 1)) + '</p>\
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">\
+                            <span class="text-[10px] text-slate-500">CPL: <strong class="text-emerald-400">' + fmtCur(c.cpl) + '</strong></span>\
+                            <span class="text-[10px] text-slate-500">Leads: <strong class="text-slate-300">' + c.leads + '</strong></span>\
+                            <span class="text-[10px] text-slate-500">CTR: <strong class="text-slate-300">' + c.ctr.toFixed(2) + '%</strong></span>\
+                            <span class="text-[10px] text-slate-500">Invest: <strong class="text-slate-300">' + fmtCur(c.spend) + '</strong></span>\
+                        </div>\
+                    </div>\
+                </div>';
+        });
+        crHTML += '</div>';
+        html += buildReportSection('criativos', sections[sIdx].num, 'Melhores Criativos', 'palette', 'violet', crHTML, true);
+        sIdx++;
+    }
+
+    // 04. O Que Funcionou (replicar)
+    if (insights.replicar.length > 0) {
+        html += buildReportSection('replicar', sections[sIdx].num, 'O Que Funcionou', 'check_circle', 'emerald',
+            buildInsightCards(insights.replicar, 'emerald'), true);
+        sIdx++;
+    }
+
+    // 05. Oportunidades de Melhoria
+    if (insights.melhorar.length > 0) {
+        html += buildReportSection('melhorar', sections[sIdx].num, 'Oportunidades de Melhoria', 'trending_up', 'amber',
+            buildInsightCards(insights.melhorar, 'amber'), true);
+        sIdx++;
+    }
+
+    // 06. Ajustes Necessarios
+    if (insights.ajustar.length > 0) {
+        html += buildReportSection('ajustar', sections[sIdx].num, 'Ajustes Necessarios', 'warning', 'red',
+            buildInsightCards(insights.ajustar, 'red'), true);
+        sIdx++;
+    }
+
+    html += '</div>';
+
+    container.innerHTML = html;
+    container.classList.remove('hidden');
+
+    // Scroll suave ate o preview
+    setTimeout(function() {
+        container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+}
+
+function buildReportSection(id, num, title, icon, color, content, open) {
+    var bodyStyle = open ? 'max-height:2000px;opacity:1' : 'max-height:0;opacity:0';
+    var chevronRotate = open ? 'transform:rotate(90deg)' : '';
+
+    return '\
+        <div id="report-section-' + id + '" class="bg-surface-dark border border-border-dark rounded-xl overflow-hidden scroll-mt-4">\
+            <button class="w-full flex items-center gap-3 px-4 py-3 group" onclick="toggleReportSection(\'' + id + '\')">\
+                <span class="text-[10px] font-bold text-' + color + '-400 bg-' + color + '-500/10 w-6 h-6 rounded-md flex items-center justify-center shrink-0">' + num + '</span>\
+                <div class="w-7 h-7 rounded-lg bg-' + color + '-500/10 flex items-center justify-center shrink-0">\
+                    <span class="material-symbols-outlined text-' + color + '-400 text-base">' + icon + '</span>\
+                </div>\
+                <h4 class="flex-1 text-left text-sm font-semibold text-slate-300 group-hover:text-white transition-colors">' + title + '</h4>\
+                <span id="report-chevron-' + id + '" class="material-symbols-outlined text-slate-600 text-base transition-transform" style="' + chevronRotate + '">chevron_right</span>\
+            </button>\
+            <div id="report-body-' + id + '" class="overflow-hidden transition-all duration-300" style="' + bodyStyle + '">\
+                <div class="px-4 pb-4">' + content + '</div>\
+            </div>\
+        </div>';
+}
+
+function buildInsightCards(items, color) {
+    var html = '<div class="space-y-2">';
+    items.forEach(function(item, i) {
+        html += '\
+            <div class="flex gap-3 p-3 bg-' + color + '-500/5 border border-' + color + '-500/10 rounded-lg analyst-card-enter" style="--delay:' + i + '">\
+                <div class="w-7 h-7 rounded-lg bg-' + color + '-500/10 flex items-center justify-center shrink-0 mt-0.5">\
+                    <span class="material-symbols-outlined text-' + color + '-400 text-base">' + item.icon + '</span>\
+                </div>\
+                <div class="flex-1 min-w-0">\
+                    <p class="text-xs font-bold text-' + color + '-400 mb-0.5">' + item.title + '</p>\
+                    <p class="text-[11px] text-slate-400 leading-relaxed">' + item.text + '</p>\
+                </div>\
+            </div>';
+    });
+    html += '</div>';
+    return html;
+}
+
+function toggleReportSection(sectionId) {
+    var body = document.getElementById('report-body-' + sectionId);
+    var chevron = document.getElementById('report-chevron-' + sectionId);
+    if (!body) return;
+
+    var isOpen = body.style.maxHeight !== '0px';
+    if (isOpen) {
+        body.style.maxHeight = '0px';
+        body.style.opacity = '0';
+        if (chevron) chevron.style.transform = '';
+    } else {
+        body.style.maxHeight = '2000px';
+        body.style.opacity = '1';
+        if (chevron) chevron.style.transform = 'rotate(90deg)';
+    }
+}
+
+function scrollToReportSection(sectionId) {
+    var el = document.getElementById('report-section-' + sectionId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Open section if collapsed
+    var body = document.getElementById('report-body-' + sectionId);
+    if (body && body.style.maxHeight === '0px') {
+        toggleReportSection(sectionId);
     }
 }
 
@@ -585,6 +956,13 @@ function buildReportPDF(params) {
     if (y > 205) { doc.addPage(); y = 20; }
     y += 2;
     y = drawPDFCampaignTable(doc, y, params, colors);
+
+    // TOP CRIATIVOS (se disponivel)
+    if (params.insights && !Array.isArray(params.insights) && params.insights.topCreatives && params.insights.topCreatives.length > 0) {
+        if (y > 205) { doc.addPage(); y = 20; }
+        y += 2;
+        y = drawPDFCreativesTable(doc, y, params.insights.topCreatives, colors);
+    }
 
     // INSIGHTS
     if (y > 235) { doc.addPage(); y = 20; }
@@ -953,54 +1331,133 @@ function drawPDFCampaignTable(doc, startY, params, colors) {
     return y + 10;
 }
 
-function drawPDFInsights(doc, startY, params, colors) {
-    // Titulo
+function drawPDFCreativesTable(doc, startY, topCreatives, colors) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor.apply(doc, colors.dark);
-    doc.text('Analise e Recomendacoes', 20, startY);
+    doc.text('Top Criativos por Eficiencia', 20, startY);
     startY += 6;
 
-    // Preparar linhas de cada insight
-    doc.setFontSize(7.5);
-    var insightBlocks = [];
-    params.insights.forEach(function(insight, idx) {
-        var lines = doc.splitTextToSize(insight, 152);
-        insightBlocks.push({ lines: lines, isFirst: idx === 0 });
+    var y = startY;
+
+    // Header
+    doc.setFillColor(139, 92, 246); // violet
+    doc.roundedRect(20, y, 170, 7, 1, 1, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor.apply(doc, colors.white);
+
+    doc.text('Criativo', 23, y + 5);
+    doc.text('Investido', 115, y + 5, { align: 'right' });
+    doc.text('Leads', 138, y + 5, { align: 'right' });
+    doc.text('CPL', 160, y + 5, { align: 'right' });
+    doc.text('CTR', 188, y + 5, { align: 'right' });
+
+    y += 9;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+
+    topCreatives.forEach(function(cr, i) {
+        if (y > 275) { doc.addPage(); y = 20; }
+
+        if (i % 2 === 0) {
+            doc.setFillColor.apply(doc, colors.bgLight);
+            doc.rect(20, y - 1.5, 170, 7, 'F');
+        }
+
+        doc.setTextColor.apply(doc, colors.text);
+        doc.text(truncateText(doc, cr.name || 'Criativo #' + (i + 1), 87), 23, y + 3);
+        doc.text(formatCurrency(cr.spend), 115, y + 3, { align: 'right' });
+        doc.text(String(Math.round(cr.leads)), 138, y + 3, { align: 'right' });
+        doc.text(formatCurrency(cr.cpl), 160, y + 3, { align: 'right' });
+        doc.text(cr.ctr.toFixed(2) + '%', 188, y + 3, { align: 'right' });
+
+        y += 7;
     });
 
+    return y + 4;
+}
+
+function drawPDFInsights(doc, startY, params, colors) {
     var y = startY;
     var pageMaxY = 275;
+    var insightsObj = params.insights;
 
-    insightBlocks.forEach(function(block) {
-        var blockH = block.lines.length * 3.5 + 8;
+    // Compatibilidade: se insights e array (formato antigo), usar diretamente
+    var insightTexts = Array.isArray(insightsObj) ? insightsObj : (insightsObj.analysis || []);
 
-        // Verificar se cabe na pagina
+    // Helper para desenhar bloco de insight
+    function drawInsightBlock(text, blockColor) {
+        doc.setFontSize(7.5);
+        var lines = doc.splitTextToSize(text, 152);
+        var blockH = lines.length * 3.5 + 8;
+
         if (y + blockH > pageMaxY) {
             doc.addPage();
             y = 20;
         }
 
-        // Background do bloco
         doc.setFillColor(248, 250, 252);
         doc.roundedRect(20, y, 170, blockH, 2, 2, 'F');
 
-        // Borda esquerda colorida
-        doc.setFillColor(19, 127, 236);
+        doc.setFillColor.apply(doc, blockColor || colors.primary);
         doc.rect(20, y + 1.5, 1.2, blockH - 3, 'F');
 
-        // Bullet
-        doc.setFillColor(19, 127, 236);
+        doc.setFillColor.apply(doc, blockColor || colors.primary);
         doc.circle(26, y + 5, 1, 'F');
 
-        // Texto
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
         doc.setTextColor.apply(doc, colors.text);
-        doc.text(block.lines, 30, y + 5.5);
+        doc.text(lines, 30, y + 5.5);
 
         y += blockH + 2;
-    });
+    }
+
+    // Helper para titulo de secao
+    function drawSectionTitle(title, sectionColor) {
+        if (y + 12 > pageMaxY) { doc.addPage(); y = 20; }
+        y += 4;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor.apply(doc, sectionColor || colors.dark);
+        doc.text(title, 20, y);
+        y += 5;
+    }
+
+    // Se formato estruturado
+    if (!Array.isArray(insightsObj)) {
+        // O Que Funcionou
+        if (insightsObj.replicar && insightsObj.replicar.length > 0) {
+            drawSectionTitle('O Que Funcionou', [16, 185, 129]);
+            insightsObj.replicar.forEach(function(item) {
+                drawInsightBlock(item.title + ': ' + item.text, colors.green);
+            });
+        }
+
+        // Oportunidades de Melhoria
+        if (insightsObj.melhorar && insightsObj.melhorar.length > 0) {
+            drawSectionTitle('Oportunidades de Melhoria', [245, 158, 11]);
+            insightsObj.melhorar.forEach(function(item) {
+                drawInsightBlock(item.title + ': ' + item.text, [245, 158, 11]);
+            });
+        }
+
+        // Ajustes Necessarios
+        if (insightsObj.ajustar && insightsObj.ajustar.length > 0) {
+            drawSectionTitle('Ajustes Necessarios', colors.red);
+            insightsObj.ajustar.forEach(function(item) {
+                drawInsightBlock(item.title + ': ' + item.text, colors.red);
+            });
+        }
+    } else {
+        // Formato antigo: array simples
+        drawSectionTitle('Analise e Recomendacoes', colors.dark);
+        insightTexts.forEach(function(text) {
+            drawInsightBlock(text, colors.primary);
+        });
+    }
 
     return y + 2;
 }
