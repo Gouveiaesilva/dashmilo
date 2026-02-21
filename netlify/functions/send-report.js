@@ -355,35 +355,34 @@ function buildGoogleChatCard(clientName, data, previousData, periodLabel, period
     // --- CPL classification ---
     const cplClass = classifyCpl(summary.cpl, cplTargets);
     const cplValueText = summary.cpl > 0
-        ? `<b>${fmtCurrency(summary.cpl)}</b>${cplClass ? ` ${cplClass.emoji} ${cplClass.label}` : ''}`
+        ? `<b>${fmtCurrency(summary.cpl)}</b>${cplClass ? ` ${cplClass.emoji}` : ''}`
         : `<b>—</b>`;
 
-    // --- Secao: Resumo do Periodo ---
     const metricWidgets = [
         {
             decoratedText: {
-                topLabel: "💰 Investimento",
+                topLabel: "💰 <b>Investimento</b>",
                 text: `<b>${fmtCurrency(summary.spend)}</b>`,
                 bottomLabel: formatVariation(spendVar, 'spend') || (prev ? '→ estavel' : '')
             }
         },
         {
             decoratedText: {
-                topLabel: "👥 Leads",
+                topLabel: "👥 <b>Leads</b>",
                 text: `<b>${fmtNumber(summary.leads)}</b>`,
                 bottomLabel: formatVariation(leadsVar, 'leads') || (prev ? '→ estavel' : '')
             }
         },
         {
             decoratedText: {
-                topLabel: "📊 Custo por Lead",
+                topLabel: "📊 <b>Custo por Lead</b>",
                 text: cplValueText,
                 bottomLabel: formatVariation(cplVar, 'cpl') || (prev && summary.cpl > 0 ? '→ estavel' : '')
             }
         },
         {
             decoratedText: {
-                topLabel: "👁 Impressoes",
+                topLabel: "👁 <b>Impressoes</b>",
                 text: `<b>${fmtNumber(summary.impressions)}</b>`,
                 bottomLabel: formatVariation(impressionsVar, 'impressions') || (prev ? '→ estavel' : '')
             }
@@ -391,54 +390,8 @@ function buildGoogleChatCard(clientName, data, previousData, periodLabel, period
     ];
 
     const sections = [
-        { header: `Resumo — ${periodNames[periodType] || periodType}`, widgets: metricWidgets }
+        { widgets: metricWidgets }
     ];
-
-    // --- Secao: Top Campanhas ---
-    const highlightWidgets = [];
-    if (campaigns.length > 0) {
-        const best = campaigns.reduce((a, b) => {
-            if (a.leads === 0 && b.leads === 0) return a.spend < b.spend ? a : b;
-            if (a.leads === 0) return b;
-            if (b.leads === 0) return a;
-            return a.cpl < b.cpl ? a : b;
-        });
-
-        if (best.leads > 0) {
-            highlightWidgets.push({
-                decoratedText: {
-                    startIcon: { materialIcon: { name: "check_circle" } },
-                    text: `✅ Melhor: ${truncate(best.name, 35)} — CPL ${fmtCurrency(best.cpl)}`
-                }
-            });
-        }
-
-        const worstCandidates = campaigns.filter(c => c.spend > 10);
-        if (worstCandidates.length > 0) {
-            const worst = worstCandidates.reduce((a, b) => {
-                if (a.leads === 0 && b.leads === 0) return a.spend > b.spend ? a : b;
-                if (a.leads === 0) return a;
-                if (b.leads === 0) return b;
-                return a.cpl > b.cpl ? a : b;
-            });
-
-            if (worst && worst !== best && (worst.leads === 0 || worst.cpl > summary.cpl * 1.3)) {
-                const worstMsg = worst.leads === 0
-                    ? `⚠ ${truncate(worst.name, 30)} gastou ${fmtCurrency(worst.spend)} sem leads`
-                    : `⚠ ${truncate(worst.name, 30)} — CPL alto: ${fmtCurrency(worst.cpl)}`;
-                highlightWidgets.push({
-                    decoratedText: {
-                        startIcon: { materialIcon: { name: "warning" } },
-                        text: worstMsg
-                    }
-                });
-            }
-        }
-    }
-
-    if (highlightWidgets.length > 0) {
-        sections.push({ header: "Top Campanhas", widgets: highlightWidgets });
-    }
 
     // --- Secao: Botoes ---
     const dashUrl = process.env.URL || "https://dashboardmilo.netlify.app";
