@@ -393,36 +393,6 @@ function buildGoogleChatCard(clientName, data, previousData, periodLabel, period
         { header: `Resumo — ${periodNames[periodType] || periodType}`, widgets: metricWidgets }
     ];
 
-    // --- Secao: Status do CPL (se cplTargets configurado) ---
-    if (cplTargets && summary.cpl > 0) {
-        const cplStatusWidgets = [];
-
-        if (cplClass) {
-            const limitLabel = cplClass.label === 'Critico'
-                ? `acima de ${fmtCurrency(cplTargets.warning)}`
-                : cplClass.label === 'Excelente'
-                    ? `abaixo de ${fmtCurrency(cplTargets.excellent)}`
-                    : cplClass.label === 'Saudavel'
-                        ? `ate ${fmtCurrency(cplTargets.healthy)}`
-                        : `ate ${fmtCurrency(cplTargets.warning)}`;
-
-            cplStatusWidgets.push({
-                decoratedText: {
-                    startIcon: { materialIcon: { name: cplClass.icon } },
-                    text: `${cplClass.emoji} CPL em faixa <b>${cplClass.label.toUpperCase()}</b> (${limitLabel})`
-                }
-            });
-        }
-
-        cplStatusWidgets.push({
-            decoratedText: {
-                text: `🟢 ≤${fmtCurrency(cplTargets.excellent)}  🔵 ≤${fmtCurrency(cplTargets.healthy)}  🟡 ≤${fmtCurrency(cplTargets.warning)}  🔴 acima`
-            }
-        });
-
-        sections.push({ header: "Status do CPL", widgets: cplStatusWidgets });
-    }
-
     // --- Secao: Top Campanhas ---
     const highlightWidgets = [];
     if (campaigns.length > 0) {

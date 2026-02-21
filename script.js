@@ -2117,7 +2117,7 @@ function updateRowMetrics(clientId, metrics) {
 
             if (classification) {
                 cplEl.innerHTML = `
-                    <div class="flex items-center justify-end gap-2">
+                    <div class="flex flex-col items-end gap-0.5">
                         <span class="text-sm font-bold text-${classification.color}-400">${formatCurrency(metrics.cpl)}</span>
                         <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-${classification.color}-500/10 text-${classification.color}-400">
                             <span class="material-symbols-outlined" style="font-size:10px">${classification.icon}</span>
@@ -2279,7 +2279,7 @@ function renderOverviewRow(client, statusData, cardState) {
     }
 
     return `
-        <div class="overview-board-row grid grid-cols-[20px_1fr_120px_80px_110px_120px_110px] gap-x-5 items-center px-6 py-4 border-b border-border-dark/50 cursor-pointer hover:bg-white/[0.04] transition-colors group ${pulseClass}"
+        <div class="overview-board-row grid grid-cols-[20px_1fr_110px_70px_140px_110px_110px] gap-x-4 items-center px-6 py-4 border-b border-border-dark/50 cursor-pointer hover:bg-white/[0.04] transition-colors group ${pulseClass}"
              data-client-id="${client.id}" data-name="${client.name}" data-spend="0" data-leads="0" data-cpl="0" data-balance="${balanceCents}"
              onclick="navigateToClient('${client.id}')">
             <div class="flex items-center justify-center">
