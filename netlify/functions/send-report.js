@@ -44,8 +44,12 @@ exports.handler = async (event, context) => {
         const usePeriod = period || 'yesterday';
         const includePdfLink = params.includePdfLink === '1' || params.includePdfLink === 'true';
         const { since, until, label } = getPeriodDates(usePeriod);
-        const data = await fetchInsightsData(client.adAccountId, since, until, accessToken);
-        const card = buildGoogleChatCard(client.name, data, label, usePeriod, clientId, includePdfLink);
+        const prev = getPreviousPeriodDates(usePeriod, since, until);
+        const [data, previousData] = await Promise.all([
+            fetchInsightsData(client.adAccountId, since, until, accessToken),
+            fetchInsightsData(client.adAccountId, prev.since, prev.until, accessToken)
+        ]);
+        const card = buildGoogleChatCard(client.name, data, previousData, label, usePeriod, clientId, includePdfLink, client.cplTargets);
 
         await sendToGoogleChat(client.googleChatWebhook, card);
 
@@ -157,6 +161,72 @@ function formatDateBR(dateStr) {
 }
 
 // ==========================================
+// CALCULAR PERIODO ANTERIOR (COMPARACAO)
+// ==========================================
+function getPreviousPeriodDates(period, currentSince, currentUntil) {
+    const sinceDate = new Date(currentSince + 'T00:00:00Z');
+    const untilDate = new Date(currentUntil + 'T00:00:00Z');
+    const daysDiff = Math.round((untilDate - sinceDate) / (1000 * 60 * 60 * 24)) + 1;
+
+    const prevUntil = new Date(sinceDate);
+    prevUntil.setUTCDate(prevUntil.getUTCDate() - 1);
+    const prevSince = new Date(prevUntil);
+    prevSince.setUTCDate(prevSince.getUTCDate() - daysDiff + 1);
+
+    return {
+        since: prevSince.toISOString().split('T')[0],
+        until: prevUntil.toISOString().split('T')[0]
+    };
+}
+
+// ==========================================
+// CLASSIFICAR CPL NAS FAIXAS DO CLIENTE
+// ==========================================
+function classifyCpl(cplValue, cplTargets) {
+    if (!cplTargets || cplValue <= 0) return null;
+    if (cplValue <= cplTargets.excellent) return { label: 'Excelente', emoji: '🟢', icon: 'check_circle' };
+    if (cplValue <= cplTargets.healthy)   return { label: 'Saudavel', emoji: '🔵', icon: 'check_circle' };
+    if (cplValue <= cplTargets.warning)   return { label: 'Atencao', emoji: '🟡', icon: 'warning' };
+    return                                       { label: 'Critico', emoji: '🔴', icon: 'error' };
+}
+
+// ==========================================
+// CALCULAR VARIACAO PERCENTUAL
+// ==========================================
+function calcVariation(current, previous) {
+    if (previous === 0 && current === 0) return null;
+    if (previous === 0) return { pct: null, direction: 'new' };
+    const pct = ((current - previous) / previous) * 100;
+    return {
+        pct: Math.abs(pct),
+        direction: pct > 0.5 ? 'up' : pct < -0.5 ? 'down' : 'neutral'
+    };
+}
+
+function formatVariation(variation, metric) {
+    if (!variation) return '';
+    if (variation.direction === 'new') return '✨ Novo';
+
+    const pctStr = variation.pct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+    // Para CPL, subir e ruim; para leads/impressoes, subir e bom
+    const isCpl = metric === 'cpl';
+    const isSpend = metric === 'spend';
+
+    if (variation.direction === 'neutral') return `→ estavel`;
+
+    if (variation.direction === 'up') {
+        if (isCpl) return `↗ +${pctStr}% ⚠`;
+        if (isSpend) return `↗ +${pctStr}%`;
+        return `↗ +${pctStr}% ✅`;
+    }
+    // down
+    if (isCpl) return `↘ -${pctStr}% ✅`;
+    if (isSpend) return `↘ -${pctStr}%`;
+    return `↘ -${pctStr}%`;
+}
+
+// ==========================================
 // BUSCAR DADOS DA META API
 // ==========================================
 async function fetchInsightsData(adAccountId, since, until, accessToken) {
@@ -260,19 +330,101 @@ function countLeadsFromActions(actions, conversionType) {
 // ==========================================
 // CONSTRUIR CARD DO GOOGLE CHAT (v2)
 // ==========================================
-function buildGoogleChatCard(clientName, data, periodLabel, periodType, clientId, includePdfLink) {
+function buildGoogleChatCard(clientName, data, previousData, periodLabel, periodType, clientId, includePdfLink, cplTargets) {
     const { summary, campaigns } = data;
+    const prev = previousData ? previousData.summary : null;
 
     const fmtCurrency = (v) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const fmtNumber = (v) => v.toLocaleString('pt-BR');
 
+    const periodNames = {
+        yesterday: 'Dia anterior',
+        last_7d: 'Ultimos 7 dias',
+        last_14d: 'Ultimos 14 dias',
+        last_30d: 'Ultimos 30 dias',
+        this_week: 'Semana corrente',
+        this_month: 'Mes corrente'
+    };
+
+    // --- Variacoes ---
+    const spendVar = prev ? calcVariation(summary.spend, prev.spend) : null;
+    const leadsVar = prev ? calcVariation(summary.leads, prev.leads) : null;
+    const cplVar = prev ? calcVariation(summary.cpl, prev.cpl) : null;
+    const impressionsVar = prev ? calcVariation(summary.impressions, prev.impressions) : null;
+
+    // --- CPL classification ---
+    const cplClass = classifyCpl(summary.cpl, cplTargets);
+    const cplValueText = summary.cpl > 0
+        ? `<b>${fmtCurrency(summary.cpl)}</b>${cplClass ? ` ${cplClass.emoji} ${cplClass.label}` : ''}`
+        : `<b>—</b>`;
+
+    // --- Secao: Resumo do Periodo ---
     const metricWidgets = [
-        { decoratedText: { topLabel: "Investimento", text: `<b>${fmtCurrency(summary.spend)}</b>` } },
-        { decoratedText: { topLabel: "Leads", text: `<b>${fmtNumber(summary.leads)}</b>` } },
-        { decoratedText: { topLabel: "CPL", text: `<b>${fmtCurrency(summary.cpl)}</b>` } },
-        { decoratedText: { topLabel: "Impressoes", text: `<b>${fmtNumber(summary.impressions)}</b>` } }
+        {
+            decoratedText: {
+                topLabel: "💰 Investimento",
+                text: `<b>${fmtCurrency(summary.spend)}</b>`,
+                bottomLabel: formatVariation(spendVar, 'spend') || (prev ? '→ estavel' : '')
+            }
+        },
+        {
+            decoratedText: {
+                topLabel: "👥 Leads",
+                text: `<b>${fmtNumber(summary.leads)}</b>`,
+                bottomLabel: formatVariation(leadsVar, 'leads') || (prev ? '→ estavel' : '')
+            }
+        },
+        {
+            decoratedText: {
+                topLabel: "📊 Custo por Lead",
+                text: cplValueText,
+                bottomLabel: formatVariation(cplVar, 'cpl') || (prev && summary.cpl > 0 ? '→ estavel' : '')
+            }
+        },
+        {
+            decoratedText: {
+                topLabel: "👁 Impressoes",
+                text: `<b>${fmtNumber(summary.impressions)}</b>`,
+                bottomLabel: formatVariation(impressionsVar, 'impressions') || (prev ? '→ estavel' : '')
+            }
+        }
     ];
 
+    const sections = [
+        { header: `Resumo — ${periodNames[periodType] || periodType}`, widgets: metricWidgets }
+    ];
+
+    // --- Secao: Status do CPL (se cplTargets configurado) ---
+    if (cplTargets && summary.cpl > 0) {
+        const cplStatusWidgets = [];
+
+        if (cplClass) {
+            const limitLabel = cplClass.label === 'Critico'
+                ? `acima de ${fmtCurrency(cplTargets.warning)}`
+                : cplClass.label === 'Excelente'
+                    ? `abaixo de ${fmtCurrency(cplTargets.excellent)}`
+                    : cplClass.label === 'Saudavel'
+                        ? `ate ${fmtCurrency(cplTargets.healthy)}`
+                        : `ate ${fmtCurrency(cplTargets.warning)}`;
+
+            cplStatusWidgets.push({
+                decoratedText: {
+                    startIcon: { materialIcon: { name: cplClass.icon } },
+                    text: `${cplClass.emoji} CPL em faixa <b>${cplClass.label.toUpperCase()}</b> (${limitLabel})`
+                }
+            });
+        }
+
+        cplStatusWidgets.push({
+            decoratedText: {
+                text: `🟢 ≤${fmtCurrency(cplTargets.excellent)}  🔵 ≤${fmtCurrency(cplTargets.healthy)}  🟡 ≤${fmtCurrency(cplTargets.warning)}  🔴 acima`
+            }
+        });
+
+        sections.push({ header: "Status do CPL", widgets: cplStatusWidgets });
+    }
+
+    // --- Secao: Top Campanhas ---
     const highlightWidgets = [];
     if (campaigns.length > 0) {
         const best = campaigns.reduce((a, b) => {
@@ -286,7 +438,7 @@ function buildGoogleChatCard(clientName, data, periodLabel, periodType, clientId
             highlightWidgets.push({
                 decoratedText: {
                     startIcon: { materialIcon: { name: "check_circle" } },
-                    text: `Melhor campanha: ${truncate(best.name, 40)} (CPL ${fmtCurrency(best.cpl)})`
+                    text: `✅ Melhor: ${truncate(best.name, 35)} — CPL ${fmtCurrency(best.cpl)}`
                 }
             });
         }
@@ -302,8 +454,8 @@ function buildGoogleChatCard(clientName, data, periodLabel, periodType, clientId
 
             if (worst && worst !== best && (worst.leads === 0 || worst.cpl > summary.cpl * 1.3)) {
                 const worstMsg = worst.leads === 0
-                    ? `${truncate(worst.name, 35)} gastou ${fmtCurrency(worst.spend)} sem leads`
-                    : `${truncate(worst.name, 35)} com CPL alto: ${fmtCurrency(worst.cpl)}`;
+                    ? `⚠ ${truncate(worst.name, 30)} gastou ${fmtCurrency(worst.spend)} sem leads`
+                    : `⚠ ${truncate(worst.name, 30)} — CPL alto: ${fmtCurrency(worst.cpl)}`;
                 highlightWidgets.push({
                     decoratedText: {
                         startIcon: { materialIcon: { name: "warning" } },
@@ -314,26 +466,14 @@ function buildGoogleChatCard(clientName, data, periodLabel, periodType, clientId
         }
     }
 
-    const periodNames = {
-        yesterday: 'Dia anterior',
-        last_7d: 'Ultimos 7 dias',
-        last_14d: 'Ultimos 14 dias',
-        last_30d: 'Ultimos 30 dias',
-        this_week: 'Semana corrente',
-        this_month: 'Mes corrente'
-    };
-
-    const sections = [
-        { header: `Metricas — ${periodNames[periodType] || periodType}`, widgets: metricWidgets }
-    ];
-
     if (highlightWidgets.length > 0) {
-        sections.push({ header: "Destaques", widgets: highlightWidgets });
+        sections.push({ header: "Top Campanhas", widgets: highlightWidgets });
     }
 
+    // --- Secao: Botoes ---
     const dashUrl = process.env.URL || "https://dashboardmilo.netlify.app";
     const buttons = [{
-        text: "Abrir Dashboard",
+        text: "📈 Abrir Dashboard",
         onClick: { openLink: { url: dashUrl } }
     }];
 
@@ -352,7 +492,10 @@ function buildGoogleChatCard(clientName, data, periodLabel, periodType, clientId
         cardsV2: [{
             cardId: `report_${Date.now()}`,
             card: {
-                header: { title: `📊 ${clientName}`, subtitle: periodLabel },
+                header: {
+                    title: `📊 ${clientName}`,
+                    subtitle: `Relatorio · ${periodNames[periodType] || periodType} · ${periodLabel}`
+                },
                 sections
             }
         }]
