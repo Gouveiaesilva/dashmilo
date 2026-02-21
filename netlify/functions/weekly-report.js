@@ -217,11 +217,9 @@ function formatVariation(variation, metric) {
 
     if (variation.direction === 'up') {
         if (isCpl) return `↗ +${pctStr}% ⚠`;
-        if (isSpend) return `↗ +${pctStr}%`;
-        return `↗ +${pctStr}% ✅`;
+        return `↗ +${pctStr}%`;
     }
-    if (isCpl) return `↘ -${pctStr}% ✅`;
-    if (isSpend) return `↘ -${pctStr}%`;
+    if (isCpl) return `↘ -${pctStr}%`;
     return `↘ -${pctStr}%`;
 }
 
@@ -239,7 +237,40 @@ async function fetchInsightsData(adAccountId, since, until, accessToken) {
     if (campData.error) throw new Error(campData.error.message);
 
     const leadObjectives = ['OUTCOME_LEADS', 'LEAD_GENERATION', 'OUTCOME_ENGAGEMENT', 'OUTCOME_SALES', 'MESSAGES'];
-    const campaigns = (campData.data || []).filter(c => leadObjectives.includes(c.objective));
+    const allCampaigns = (campData.data || []).filter(c => leadObjectives.includes(c.objective));
+
+    if (allCampaigns.length === 0) {
+        return { summary: { spend: 0, leads: 0, cpl: 0, impressions: 0 }, campaigns: [] };
+    }
+
+    // Verificar quais campanhas de ENGAGEMENT/SALES tem WhatsApp como destino
+    const needsDestinationCheck = ['OUTCOME_ENGAGEMENT', 'OUTCOME_SALES'];
+    const engagementCampaignIds = allCampaigns.filter(c => needsDestinationCheck.includes(c.objective)).map(c => c.id);
+
+    const whatsappCampaignIds = new Set();
+    if (engagementCampaignIds.length > 0) {
+        const engFiltering = JSON.stringify([{ field: 'campaign.id', operator: 'IN', value: engagementCampaignIds }]);
+        const adsetsUrl = `${META_API_BASE}/${accountId}/adsets?fields=campaign_id,destination_type,optimization_goal&filtering=${encodeURIComponent(engFiltering)}&access_token=${accessToken}&limit=500`;
+        const adsetsResp = await fetch(adsetsUrl);
+        const adsetsData = await adsetsResp.json();
+
+        const excludedOptGoals = ['THRUPLAY', 'REACH', 'IMPRESSIONS', 'LINK_CLICKS', 'LANDING_PAGE_VIEWS', 'POST_ENGAGEMENT', 'VIDEO_VIEWS'];
+        if (adsetsData.data) {
+            adsetsData.data.forEach(adset => {
+                if (adset.destination_type === 'WHATSAPP' && !excludedOptGoals.includes(adset.optimization_goal)) {
+                    whatsappCampaignIds.add(adset.campaign_id);
+                }
+            });
+        }
+    }
+
+    // Filtrar campanhas: LEADS e MESSAGES sempre, ENGAGEMENT/SALES apenas se WhatsApp
+    const campaigns = allCampaigns.filter(c => {
+        if (c.objective === 'OUTCOME_LEADS' || c.objective === 'LEAD_GENERATION') return true;
+        if (c.objective === 'MESSAGES') return true;
+        if (needsDestinationCheck.includes(c.objective)) return whatsappCampaignIds.has(c.id);
+        return false;
+    });
 
     if (campaigns.length === 0) {
         return { summary: { spend: 0, leads: 0, cpl: 0, impressions: 0 }, campaigns: [] };
@@ -360,29 +391,29 @@ function buildGoogleChatCard(clientName, data, previousData, periodLabel, period
     const metricWidgets = [
         {
             decoratedText: {
-                topLabel: "💰 <b>Investimento</b>",
-                text: `<b>${fmtCurrency(summary.spend)}</b>`,
+                topLabel: "INVESTIMENTO",
+                text: `💰 <b>${fmtCurrency(summary.spend)}</b>`,
                 bottomLabel: formatVariation(spendVar, 'spend') || (prev ? '→ estavel' : '')
             }
         },
         {
             decoratedText: {
-                topLabel: "👥 <b>Leads</b>",
-                text: `<b>${fmtNumber(summary.leads)}</b>`,
+                topLabel: "LEADS",
+                text: `👥 <b>${fmtNumber(summary.leads)}</b>`,
                 bottomLabel: formatVariation(leadsVar, 'leads') || (prev ? '→ estavel' : '')
             }
         },
         {
             decoratedText: {
-                topLabel: "📊 <b>Custo por Lead</b>",
-                text: cplValueText,
+                topLabel: "CUSTO POR LEAD",
+                text: `📊 ${cplValueText}`,
                 bottomLabel: formatVariation(cplVar, 'cpl') || (prev && summary.cpl > 0 ? '→ estavel' : '')
             }
         },
         {
             decoratedText: {
-                topLabel: "👁 <b>Impressoes</b>",
-                text: `<b>${fmtNumber(summary.impressions)}</b>`,
+                topLabel: "IMPRESSOES",
+                text: `👁 <b>${fmtNumber(summary.impressions)}</b>`,
                 bottomLabel: formatVariation(impressionsVar, 'impressions') || (prev ? '→ estavel' : '')
             }
         }
