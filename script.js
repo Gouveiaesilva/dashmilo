@@ -66,6 +66,9 @@ function checkLoginStatus() {
 
     if (savedUser) {
         currentUser = JSON.parse(savedUser);
+        if (currentUser.isAdmin) {
+            currentAdminPassword = ADMIN_PASSWORD;
+        }
         updateUserInfo(currentUser);
         showDashboard();
         populateClientFilter();
@@ -1023,17 +1026,22 @@ function updateFormMode() {
 }
 
 // Mostrar mensagem de feedback (toast)
-function showToast(message) {
+function showToast(message, type) {
     // Remover toast existente se houver
     const existingToast = document.getElementById('toast');
     if (existingToast) existingToast.remove();
+
+    const icons = { success: 'check_circle', error: 'error', info: 'info' };
+    const colors = { success: 'text-emerald-400', error: 'text-red-400', info: 'text-blue-400' };
+    const icon = icons[type] || 'check_circle';
+    const color = colors[type] || 'text-primary';
 
     // Criar toast
     const toast = document.createElement('div');
     toast.id = 'toast';
     toast.className = 'fixed bottom-4 right-4 bg-surface-dark border border-border-dark text-white px-4 py-3 rounded-lg shadow-2xl z-50 flex items-center gap-2 animate-slide-up';
     toast.innerHTML = `
-        <span class="material-symbols-outlined text-primary">check_circle</span>
+        <span class="material-symbols-outlined ${color}">${icon}</span>
         <span class="text-sm">${message}</span>
     `;
 
@@ -1126,7 +1134,7 @@ function updateSendReportButton() {
     if (!btn) return;
     const select = document.getElementById('clientFilter');
     if (!select.value) { btn.classList.add('hidden'); return; }
-    const client = clients.find(c => c.id === select.value);
+    const client = clientsCache.find(c => c.id === select.value);
     if (client && client.googleChatWebhook) {
         btn.classList.remove('hidden');
     } else {
@@ -1138,7 +1146,7 @@ async function sendManualReport() {
     const select = document.getElementById('clientFilter');
     if (!select.value) return;
 
-    const client = clients.find(c => c.id === select.value);
+    const client = clientsCache.find(c => c.id === select.value);
     if (!client || !client.googleChatWebhook) {
         showToast('Cliente nao possui webhook configurado', 'error');
         return;
@@ -1160,7 +1168,7 @@ async function sendManualReport() {
 
     try {
         const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
-        const resp = await fetch(`${baseUrl}/.netlify/functions/weekly-report?clientId=${client.id}&period=${period}`);
+        const resp = await fetch(`${baseUrl}/.netlify/functions/send-report?clientId=${client.id}&period=${period}`);
         const data = await resp.json();
         if (data.success) {
             showToast('Relatorio enviado para o Google Chat!', 'success');
@@ -4006,10 +4014,10 @@ function populateScheduleClientFilter() {
     if (!sel) return;
     const prev = sel.value;
     sel.innerHTML = '<option value="">Selecione um Cliente</option>';
-    (clients || []).forEach(c => {
+    (clientsCache || []).forEach(c => {
         sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
     });
-    if (prev && clients.some(c => c.id === prev)) {
+    if (prev && clientsCache.some(c => c.id === prev)) {
         sel.value = prev;
     }
 }
@@ -4031,7 +4039,7 @@ function onScheduleClientChange() {
     scheduleSelectedClientId = clientId;
     container.classList.remove('hidden');
 
-    const client = clients.find(c => c.id === clientId);
+    const client = clientsCache.find(c => c.id === clientId);
     if (!client || !client.googleChatWebhook) {
         noWebhook.classList.remove('hidden');
         rulesDiv.classList.add('hidden');
@@ -4196,8 +4204,8 @@ async function saveScheduleConfig() {
         const result = await updateClientAPI(scheduleSelectedClientId, { reportSchedules: rules }, currentAdminPassword);
         if (result.success) {
             // Update local client data
-            const idx = clients.findIndex(c => c.id === scheduleSelectedClientId);
-            if (idx !== -1) clients[idx].reportSchedules = rules;
+            const idx = clientsCache.findIndex(c => c.id === scheduleSelectedClientId);
+            if (idx !== -1) clientsCache[idx].reportSchedules = rules;
             showToast('Configuracao de envio salva com sucesso', 'success');
         } else {
             showToast(result.error || 'Erro ao salvar configuracao', 'error');
@@ -4210,7 +4218,7 @@ async function saveScheduleConfig() {
 async function sendTestReport() {
     if (!scheduleSelectedClientId) return;
 
-    const client = clients.find(c => c.id === scheduleSelectedClientId);
+    const client = clientsCache.find(c => c.id === scheduleSelectedClientId);
     if (!client || !client.googleChatWebhook) {
         showToast('Cliente nao possui webhook configurado', 'error');
         return;
@@ -4222,7 +4230,7 @@ async function sendTestReport() {
     showToast('Enviando relatorio de teste...', 'info');
 
     try {
-        const resp = await fetch(`/.netlify/functions/weekly-report?clientId=${scheduleSelectedClientId}&period=${period}&test=1`);
+        const resp = await fetch(`/.netlify/functions/send-report?clientId=${scheduleSelectedClientId}&period=${period}&test=1`);
         const data = await resp.json();
         if (data.success) {
             showToast('Relatorio enviado para o Google Chat!', 'success');

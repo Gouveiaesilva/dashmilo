@@ -1,6 +1,5 @@
-// Netlify Scheduled Function — roda a cada hora e verifica agendamentos
-// NAO pode ser chamada via HTTP (limitacao do Netlify scheduled functions)
-// Para envio manual, usar send-report.js
+// Netlify Function para envio manual de relatorios via Google Chat
+// Chamada via GET: /.netlify/functions/send-report?clientId=X&period=last_7d
 
 const { getStore } = require("@netlify/blobs");
 
@@ -8,58 +7,55 @@ const META_API_VERSION = 'v24.0';
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 
 exports.handler = async (event, context) => {
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Content-Type': 'application/json'
+    };
+
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 200, headers, body: '' };
+    }
+
     const accessToken = process.env.META_ACCESS_TOKEN;
     if (!accessToken) {
-        console.log('weekly-report: META_ACCESS_TOKEN nao configurado');
-        return;
+        return { statusCode: 500, headers, body: JSON.stringify({ error: 'META_ACCESS_TOKEN nao configurado' }) };
     }
 
     try {
-        const store = getClientStore();
-        const clients = await store.get("clients_list", { type: "json" }) || [];
+        const params = event.queryStringParameters || {};
+        const { clientId, period } = params;
 
-        // Hora atual em BRT (UTC-3)
-        const now = new Date();
-        const brt = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-        const currentHour = String(brt.getUTCHours()).padStart(2, '0');
-        const dayMap = { 0: 'dom', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat' };
-        const currentDay = dayMap[brt.getUTCDay()];
-
-        console.log(`weekly-report: checking schedules at ${currentHour}:00 BRT, day=${currentDay}`);
-
-        let sentCount = 0;
-
-        for (const client of clients) {
-            if (!client.googleChatWebhook || !client.reportSchedules) continue;
-
-            for (const schedule of client.reportSchedules) {
-                if (!schedule.enabled) continue;
-                if (!schedule.days || !schedule.days.includes(currentDay)) continue;
-
-                const schedHour = (schedule.time || '08:00').split(':')[0];
-                if (schedHour !== currentHour) continue;
-
-                try {
-                    const { since, until, label } = getPeriodDates(schedule.period || 'yesterday');
-                    const data = await fetchInsightsData(client.adAccountId, since, until, accessToken);
-                    const card = buildGoogleChatCard(client.name, data, label, schedule.period);
-
-                    if (schedule.includePdfLink) {
-                        addDashboardLink(card);
-                    }
-
-                    await sendToGoogleChat(client.googleChatWebhook, card);
-                    sentCount++;
-                    console.log(`weekly-report: sent to ${client.name} (${schedule.period})`);
-                } catch (err) {
-                    console.error(`weekly-report: error for ${client.name}:`, err.message);
-                }
-            }
+        if (!clientId) {
+            return { statusCode: 400, headers, body: JSON.stringify({ error: 'clientId e obrigatorio' }) };
         }
 
-        console.log(`weekly-report: done, sent ${sentCount} reports`);
+        const store = getClientStore();
+        const clients = await store.get("clients_list", { type: "json" }) || [];
+        const client = clients.find(c => c.id === clientId);
+
+        if (!client) {
+            return { statusCode: 404, headers, body: JSON.stringify({ success: false, error: 'Cliente nao encontrado' }) };
+        }
+        if (!client.googleChatWebhook) {
+            return { statusCode: 400, headers, body: JSON.stringify({ success: false, error: 'Cliente nao possui webhook configurado' }) };
+        }
+
+        const { since, until, label } = getPeriodDates(period || 'yesterday');
+        const data = await fetchInsightsData(client.adAccountId, since, until, accessToken);
+        const card = buildGoogleChatCard(client.name, data, label, period || 'yesterday');
+
+        await sendToGoogleChat(client.googleChatWebhook, card);
+
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({ success: true, message: `Relatorio enviado para ${client.name}` })
+        };
+
     } catch (error) {
-        console.error('weekly-report error:', error);
+        console.error('send-report error:', error);
+        return { statusCode: 500, headers, body: JSON.stringify({ success: false, error: error.message }) };
     }
 };
 
@@ -353,18 +349,6 @@ function buildGoogleChatCard(clientName, data, periodLabel, periodType) {
             }
         }]
     };
-}
-
-function addDashboardLink(card) {
-    const dashUrl = process.env.URL || "https://dashboardmilo.netlify.app";
-    const sections = card.cardsV2[0].card.sections;
-    const lastSection = sections[sections.length - 1];
-    if (lastSection.widgets && lastSection.widgets[0] && lastSection.widgets[0].buttonList) {
-        lastSection.widgets[0].buttonList.buttons.push({
-            text: "Ver Relatorio PDF",
-            onClick: { openLink: { url: `${dashUrl}?tab=relatorios` } }
-        });
-    }
 }
 
 function truncate(str, maxLen) {
