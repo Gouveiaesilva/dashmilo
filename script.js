@@ -1081,6 +1081,11 @@ async function onCampaignFilterChange() {
 
     // Aplicar filtro selecionado
     applyCurrentFilters();
+
+    // Se aba analista está ativa, re-analisar com novo filtro
+    if (analysisTab === 'analyst') {
+        loadAnalystReport();
+    }
 }
 
 // Carregar conjuntos de anúncios (apenas os que tiveram veiculação no período)
@@ -1753,6 +1758,7 @@ function switchPanel(panel) {
 let overviewDataCache = null;
 let overviewSortField = null;
 let overviewSortAsc = true;
+let overviewViewMode = 'board';
 
 // Inicializar sort por clique nos headers (event delegation)
 document.addEventListener('DOMContentLoaded', function() {
@@ -1771,8 +1777,10 @@ async function loadOverviewData() {
     const rowsContainer = document.getElementById('overviewBoardRows');
     const loading = document.getElementById('overviewLoading');
 
-    // Limpar rows existentes e resetar ordenacao
+    // Limpar rows e cards existentes, resetar ordenacao
     rowsContainer.querySelectorAll('.overview-board-row').forEach(r => r.remove());
+    const cardsEl = document.getElementById('overviewCards');
+    if (cardsEl) cardsEl.innerHTML = '';
     overviewSortField = null;
     overviewSortAsc = true;
     document.querySelectorAll('.board-sort-icon').forEach(i => i.textContent = 'unfold_more');
@@ -1841,6 +1849,9 @@ async function loadOverviewData() {
 
         updateOverviewSummary(clients.length, activeCount, problemCount);
         overviewDataCache = { clients, statusMap, timestamp: Date.now() };
+
+        // Render cards view (always render so metrics can update both views)
+        renderOverviewCards();
 
         // FASE 2: Buscar metricas de cada cliente em paralelo
         const insightPromises = clients.map(client => {
@@ -1912,6 +1923,7 @@ function updateRowMetrics(clientId, metrics) {
         if (spendEl) spendEl.innerHTML = '<span class="text-sm text-slate-500">--</span>';
         if (leadsEl) leadsEl.innerHTML = '<span class="text-sm text-slate-500">--</span>';
         if (cplEl) cplEl.innerHTML = '<span class="text-sm text-slate-500">--</span>';
+        updateCardMetrics(clientId, null);
         return;
     }
 
@@ -1939,6 +1951,9 @@ function updateRowMetrics(clientId, metrics) {
             }
         }
     }
+
+    // Also update card view
+    updateCardMetrics(clientId, metrics);
 }
 
 function sortOverviewBoard(field) {
@@ -2150,6 +2165,163 @@ function formatOverviewBalance(valueCents, currency) {
         style: 'currency',
         currency: currency || 'BRL'
     }).format(value);
+}
+
+// ==========================================
+// VISAO GERAL - TOGGLE BOARD/CARDS
+// ==========================================
+
+function setOverviewView(mode) {
+    overviewViewMode = mode;
+
+    const btnBoard = document.getElementById('viewBoard');
+    const btnCards = document.getElementById('viewCards');
+    const boardWrapper = document.getElementById('overviewBoard')?.closest('.bg-surface-dark');
+    const cardsContainer = document.getElementById('overviewCardsContainer');
+
+    // Toggle button states
+    if (btnBoard && btnCards) {
+        if (mode === 'board') {
+            btnBoard.className = 'p-1.5 rounded-md transition-colors text-white bg-primary/20';
+            btnCards.className = 'p-1.5 rounded-md transition-colors text-slate-500 hover:text-slate-300';
+        } else {
+            btnBoard.className = 'p-1.5 rounded-md transition-colors text-slate-500 hover:text-slate-300';
+            btnCards.className = 'p-1.5 rounded-md transition-colors text-white bg-primary/20';
+        }
+    }
+
+    // Toggle containers
+    if (boardWrapper && cardsContainer) {
+        if (mode === 'board') {
+            boardWrapper.classList.remove('hidden');
+            cardsContainer.classList.add('hidden');
+        } else {
+            boardWrapper.classList.add('hidden');
+            cardsContainer.classList.remove('hidden');
+            // Render cards if cache exists and cards container is empty
+            if (overviewDataCache && document.getElementById('overviewCards').children.length === 0) {
+                renderOverviewCards();
+            }
+        }
+    }
+}
+
+function renderOverviewCards() {
+    const container = document.getElementById('overviewCards');
+    if (!container || !overviewDataCache) return;
+
+    container.innerHTML = '';
+    const { clients, statusMap } = overviewDataCache;
+
+    clients.forEach((client, idx) => {
+        const formattedId = client.adAccountId.startsWith('act_') ? client.adAccountId : `act_${client.adAccountId}`;
+        const statusData = statusMap.get(formattedId) || { error: true };
+        const cardState = getClientCardState(statusData);
+
+        const isPrepay = statusData.is_prepay_account;
+        const pulseClass = cardState.pulseAnimation ? 'overview-card-pulse' : '';
+
+        // Balance
+        let balanceHTML;
+        if (statusData.error) {
+            balanceHTML = '<span class="text-slate-500 text-sm">--</span>';
+        } else if (isPrepay) {
+            const balanceCents = getPrepaidRemainingCents(statusData);
+            const balanceColor = balanceCents <= 0 ? 'text-red-400' : 'text-emerald-400';
+            balanceHTML = `<span class="${balanceColor} text-sm font-bold">${formatOverviewBalance(balanceCents, statusData.currency)}</span>`;
+        } else {
+            balanceHTML = '<span class="text-slate-400 flex items-center gap-1"><span class="material-symbols-outlined text-sm">credit_card</span><span class="text-xs">Cartao</span></span>';
+        }
+
+        // Status border color
+        const borderColor = cardState.dotColor.replace('bg-', 'border-l-');
+
+        container.insertAdjacentHTML('beforeend', `
+            <div class="overview-client-card overview-card-enter bg-surface-dark border border-border-dark rounded-xl overflow-hidden cursor-pointer group ${pulseClass}"
+                 data-client-id="${client.id}" style="--delay:${idx}"
+                 onclick="navigateToClient('${client.id}')">
+                <!-- Status accent -->
+                <div class="h-1 ${cardState.dotColor}"></div>
+
+                <div class="p-4">
+                    <!-- Header: Avatar + Name + Badge -->
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 bg-${client.color}-500/15 rounded-xl flex items-center justify-center text-${client.color}-500 shrink-0">
+                            <span class="material-symbols-outlined text-xl">store</span>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-bold text-white truncate group-hover:text-primary transition-colors">${client.name}</p>
+                        </div>
+                        <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold ${cardState.labelClass} shrink-0">
+                            <span class="w-1.5 h-1.5 rounded-full ${cardState.dotColor}"></span>
+                            ${cardState.label}
+                        </span>
+                    </div>
+
+                    <!-- Metrics 2x2 Grid -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="bg-background-dark rounded-lg p-2.5" id="card-spend-${client.id}">
+                            <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Investido</p>
+                            <span class="inline-block w-16 h-4 bg-slate-700/30 rounded animate-pulse"></span>
+                        </div>
+                        <div class="bg-background-dark rounded-lg p-2.5" id="card-leads-${client.id}">
+                            <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Leads</p>
+                            <span class="inline-block w-10 h-4 bg-slate-700/30 rounded animate-pulse"></span>
+                        </div>
+                        <div class="bg-background-dark rounded-lg p-2.5" id="card-cpl-${client.id}">
+                            <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">CPL</p>
+                            <span class="inline-block w-14 h-4 bg-slate-700/30 rounded animate-pulse"></span>
+                        </div>
+                        <div class="bg-background-dark rounded-lg p-2.5">
+                            <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Saldo</p>
+                            ${balanceHTML}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `);
+    });
+}
+
+function updateCardMetrics(clientId, metrics) {
+    const cardSpend = document.getElementById(`card-spend-${clientId}`);
+    const cardLeads = document.getElementById(`card-leads-${clientId}`);
+    const cardCpl = document.getElementById(`card-cpl-${clientId}`);
+
+    if (!cardSpend && !cardLeads && !cardCpl) return;
+
+    if (!metrics) {
+        if (cardSpend) cardSpend.innerHTML = '<p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Investido</p><span class="text-sm text-slate-500">--</span>';
+        if (cardLeads) cardLeads.innerHTML = '<p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Leads</p><span class="text-sm text-slate-500">--</span>';
+        if (cardCpl) cardCpl.innerHTML = '<p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">CPL</p><span class="text-sm text-slate-500">--</span>';
+        return;
+    }
+
+    if (cardSpend) {
+        cardSpend.innerHTML = `<p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Investido</p><p class="text-sm font-bold text-white">${formatCurrency(metrics.spend)}</p>`;
+    }
+    if (cardLeads) {
+        cardLeads.innerHTML = `<p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Leads</p><p class="text-sm font-bold text-white">${formatNumber(metrics.leads)}</p>`;
+    }
+    if (cardCpl) {
+        if (metrics.cpl <= 0) {
+            cardCpl.innerHTML = '<p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">CPL</p><span class="text-sm text-slate-500">--</span>';
+        } else {
+            const client = clientsCache.find(c => c.id === clientId);
+            const classification = client?.cplTargets ? classifyCpl(metrics.cpl, client.cplTargets) : null;
+            if (classification) {
+                cardCpl.innerHTML = `
+                    <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">CPL</p>
+                    <p class="text-sm font-bold text-${classification.color}-400">${formatCurrency(metrics.cpl)}</p>
+                    <span class="inline-flex items-center gap-0.5 px-1 py-px rounded text-[8px] font-bold bg-${classification.color}-500/10 text-${classification.color}-400 mt-0.5">
+                        <span class="material-symbols-outlined" style="font-size:9px">${classification.icon}</span>
+                        ${classification.label}
+                    </span>`;
+            } else {
+                cardCpl.innerHTML = `<p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">CPL</p><p class="text-sm font-bold text-white">${formatCurrency(metrics.cpl)}</p>`;
+            }
+        }
+    }
 }
 
 function updateOverviewSummary(total, active, problems) {
@@ -2784,11 +2956,26 @@ async function loadAnalystReport() {
             campaignsDataCache = result.campaigns || [];
         }
 
+        // Aplicar filtros ativos (campanha/conjunto) sobre o cache
+        const campaignFilterEl = document.getElementById('campaignFilter');
+        const adsetFilterEl = document.getElementById('adsetFilter');
+        const selectedCampaignId = campaignFilterEl ? campaignFilterEl.value : '';
+        const selectedAdsetId = adsetFilterEl ? adsetFilterEl.value : '';
+
+        let filteredCampaigns = campaignsDataCache;
+        let filterScope = null; // null = conta inteira
+
+        if (selectedCampaignId) {
+            filteredCampaigns = campaignsDataCache.filter(c => c.id === selectedCampaignId);
+            const campaignName = campaignFilterEl.options[campaignFilterEl.selectedIndex]?.textContent || '';
+            filterScope = { type: 'campaign', label: campaignName };
+        }
+
         loading.classList.add('hidden');
 
         const cplTargets = getCurrentClientCplTargets();
-        const diagnostics = runAnalysisEngine(campaignsDataCache, cplTargets);
-        renderAnalystReport(diagnostics, cplTargets, campaignsDataCache);
+        const diagnostics = runAnalysisEngine(filteredCampaigns, cplTargets);
+        renderAnalystReport(diagnostics, cplTargets, filteredCampaigns, filterScope);
 
     } catch (error) {
         console.error('Erro ao gerar analise:', error);
@@ -3111,7 +3298,7 @@ function scrollToAnalystSection(sectionId) {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function renderAnalystReport(analysisResult, cplTargets, campaigns) {
+function renderAnalystReport(analysisResult, cplTargets, campaigns, filterScope) {
     const content = document.getElementById('analysisContent');
     const totalSpend = campaigns.reduce((s, c) => s + c.metrics.spend, 0);
     const totalLeads = campaigns.reduce((s, c) => s + c.metrics.leads, 0);
@@ -3189,6 +3376,17 @@ function renderAnalystReport(analysisResult, cplTargets, campaigns) {
                     Exportar PDF
                 </button>
             </div>
+
+            ${filterScope ? `
+                <div class="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-primary/5 border border-primary/15">
+                    <span class="material-symbols-outlined text-primary text-sm">filter_alt</span>
+                    <p class="text-[11px] text-slate-400">Analise filtrada: <strong class="text-white">${filterScope.label}</strong></p>
+                    <button onclick="document.getElementById('campaignFilter').value=''; resetAdsetFilter(); applyCurrentFilters(); loadAnalystReport();" class="ml-auto text-[10px] text-slate-500 hover:text-white transition-colors flex items-center gap-1">
+                        <span class="material-symbols-outlined text-xs">close</span>
+                        Analisar toda a conta
+                    </button>
+                </div>
+            ` : ''}
 
             <!-- KPI Cards -->
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">

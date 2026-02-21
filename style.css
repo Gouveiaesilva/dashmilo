@@ -568,6 +568,50 @@ select option {
 }
 
 /* ==========================================
+   VISAO GERAL - CARDS VIEW
+   ========================================== */
+
+.overview-client-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+@media (hover: hover) {
+  .overview-client-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.3);
+    border-color: rgba(100, 116, 139, 0.4);
+  }
+}
+
+@media (hover: none) {
+  .overview-client-card:active {
+    opacity: 0.9;
+    transform: scale(0.98);
+  }
+}
+
+.overview-card-enter {
+  animation: overviewCardIn 0.3s ease-out backwards;
+  animation-delay: calc(var(--delay, 0) * 50ms);
+}
+
+@keyframes overviewCardIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.overview-card-pulse {
+  animation: pulseRedBorder 2s ease-in-out infinite;
+  border-color: #ef4444;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overview-card-enter {
+    animation: none;
+  }
+}
+
+/* ==========================================
    AGENTE ANALISTA - REPORT
    ========================================== */
 
