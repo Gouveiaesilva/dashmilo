@@ -7,6 +7,9 @@ const { getStore } = require("@netlify/blobs");
 const META_API_VERSION = 'v24.0';
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 
+// Schedule inline (redundante com netlify.toml, mas garante registro)
+exports.schedule = "@hourly";
+
 exports.handler = async (event, context) => {
     const accessToken = process.env.META_ACCESS_TOKEN;
     if (!accessToken) {
@@ -42,11 +45,7 @@ exports.handler = async (event, context) => {
                 try {
                     const { since, until, label } = getPeriodDates(schedule.period || 'yesterday');
                     const data = await fetchInsightsData(client.adAccountId, since, until, accessToken);
-                    const card = buildGoogleChatCard(client.name, data, label, schedule.period);
-
-                    if (schedule.includePdfLink) {
-                        addDashboardLink(card);
-                    }
+                    const card = buildGoogleChatCard(client.name, data, label, schedule.period, client.id, schedule.includePdfLink);
 
                     await sendToGoogleChat(client.googleChatWebhook, card);
                     sentCount++;
@@ -262,7 +261,7 @@ function countLeadsFromActions(actions, conversionType) {
 // ==========================================
 // CONSTRUIR CARD DO GOOGLE CHAT (v2)
 // ==========================================
-function buildGoogleChatCard(clientName, data, periodLabel, periodType) {
+function buildGoogleChatCard(clientName, data, periodLabel, periodType, clientId, includePdfLink) {
     const { summary, campaigns } = data;
 
     const fmtCurrency = (v) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -333,15 +332,21 @@ function buildGoogleChatCard(clientName, data, periodLabel, periodType) {
         sections.push({ header: "Destaques", widgets: highlightWidgets });
     }
 
+    const dashUrl = process.env.URL || "https://dashboardmilo.netlify.app";
+    const buttons = [{
+        text: "Abrir Dashboard",
+        onClick: { openLink: { url: dashUrl } }
+    }];
+
+    if (includePdfLink && clientId) {
+        buttons.push({
+            text: "📄 Gerar Relatorio PDF",
+            onClick: { openLink: { url: `${dashUrl}?autoReport=${encodeURIComponent(clientId)}&period=${periodType}` } }
+        });
+    }
+
     sections.push({
-        widgets: [{
-            buttonList: {
-                buttons: [{
-                    text: "Abrir Dashboard",
-                    onClick: { openLink: { url: process.env.URL || "https://dashboardmilo.netlify.app" } }
-                }]
-            }
-        }]
+        widgets: [{ buttonList: { buttons } }]
     });
 
     return {
@@ -353,18 +358,6 @@ function buildGoogleChatCard(clientName, data, periodLabel, periodType) {
             }
         }]
     };
-}
-
-function addDashboardLink(card) {
-    const dashUrl = process.env.URL || "https://dashboardmilo.netlify.app";
-    const sections = card.cardsV2[0].card.sections;
-    const lastSection = sections[sections.length - 1];
-    if (lastSection.widgets && lastSection.widgets[0] && lastSection.widgets[0].buttonList) {
-        lastSection.widgets[0].buttonList.buttons.push({
-            text: "Ver Relatorio PDF",
-            onClick: { openLink: { url: `${dashUrl}?tab=relatorios` } }
-        });
-    }
 }
 
 function truncate(str, maxLen) {

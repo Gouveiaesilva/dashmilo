@@ -109,6 +109,9 @@ function handleLogin(event) {
         switchPanel('visao-geral');
         loadOverviewData();
 
+        // Verificar se tem auto-report pendente (link do Google Chat)
+        handleAutoReportLink();
+
         // Limpar formulário
         document.getElementById('loginEmail').value = '';
         document.getElementById('loginPassword').value = '';
@@ -2562,7 +2565,92 @@ document.addEventListener('click', function(e) {
 document.addEventListener('DOMContentLoaded', function() {
     // Verificar status de login
     checkLoginStatus();
+
+    // Verificar deep link para auto-report (?autoReport=clientId&period=last_7d)
+    handleAutoReportLink();
 });
+
+function handleAutoReportLink() {
+    const params = new URLSearchParams(window.location.search);
+    const clientId = params.get('autoReport');
+    const period = params.get('period');
+
+    if (!clientId) {
+        // Verificar se tem pendente no sessionStorage (apos login)
+        const pending = sessionStorage.getItem('pendingAutoReport');
+        if (pending) {
+            sessionStorage.removeItem('pendingAutoReport');
+            const data = JSON.parse(pending);
+            executeAutoReport(data.clientId, data.period);
+        }
+        return;
+    }
+
+    // Limpar URL
+    window.history.replaceState({}, '', window.location.pathname);
+
+    if (currentUser) {
+        // Ja logado — executar direto
+        executeAutoReport(clientId, period);
+    } else {
+        // Nao logado — salvar para executar apos login
+        sessionStorage.setItem('pendingAutoReport', JSON.stringify({ clientId, period }));
+    }
+}
+
+async function executeAutoReport(clientId, period) {
+    // Esperar clientes carregarem
+    let attempts = 0;
+    while (clientsCache.length === 0 && attempts < 30) {
+        await new Promise(r => setTimeout(r, 500));
+        attempts++;
+    }
+
+    const client = clientsCache.find(c => c.id === clientId);
+    if (!client) {
+        showToast('Cliente nao encontrado para gerar relatorio', 'error');
+        return;
+    }
+
+    // Navegar para aba Relatorios
+    switchPanel('relatorios');
+
+    // Popular o filtro de clientes do relatorio e aguardar
+    if (typeof populateReportClientFilter === 'function') {
+        await populateReportClientFilter();
+    }
+
+    await new Promise(r => setTimeout(r, 300));
+
+    // Selecionar cliente
+    const reportClientFilter = document.getElementById('reportClientFilter');
+    if (!reportClientFilter) return;
+
+    reportClientFilter.value = clientId;
+    if (typeof onReportClientChange === 'function') onReportClientChange();
+
+    // Selecionar periodo
+    if (period) {
+        const reportPeriodFilter = document.getElementById('reportPeriodFilter');
+        if (reportPeriodFilter) {
+            reportPeriodFilter.value = period;
+            if (typeof onReportPeriodChange === 'function') onReportPeriodChange();
+        }
+    }
+
+    // Gerar relatorio
+    await new Promise(r => setTimeout(r, 300));
+    if (typeof generateReport !== 'function') return;
+
+    showToast('Gerando relatorio PDF...', 'info');
+    await generateReport();
+
+    // Exportar PDF automaticamente
+    await new Promise(r => setTimeout(r, 500));
+    if (typeof exportReportPDF === 'function' && reportPreviewData) {
+        await exportReportPDF();
+    }
+}
 
 // Fechar modais com ESC
 document.addEventListener('keydown', function(event) {
@@ -4226,11 +4314,12 @@ async function sendTestReport() {
 
     const rules = collectScheduleRules();
     const period = rules.length > 0 ? rules[0].period : 'yesterday';
+    const includePdf = rules.length > 0 && rules[0].includePdfLink ? '1' : '0';
 
     showToast('Enviando relatorio de teste...', 'info');
 
     try {
-        const resp = await fetch(`/.netlify/functions/send-report?clientId=${scheduleSelectedClientId}&period=${period}&test=1`);
+        const resp = await fetch(`/.netlify/functions/send-report?clientId=${scheduleSelectedClientId}&period=${period}&includePdfLink=${includePdf}`);
         const data = await resp.json();
         if (data.success) {
             showToast('Relatorio enviado para o Google Chat!', 'success');

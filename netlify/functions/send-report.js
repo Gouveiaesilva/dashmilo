@@ -41,9 +41,11 @@ exports.handler = async (event, context) => {
             return { statusCode: 400, headers, body: JSON.stringify({ success: false, error: 'Cliente nao possui webhook configurado' }) };
         }
 
-        const { since, until, label } = getPeriodDates(period || 'yesterday');
+        const usePeriod = period || 'yesterday';
+        const includePdfLink = params.includePdfLink === '1' || params.includePdfLink === 'true';
+        const { since, until, label } = getPeriodDates(usePeriod);
         const data = await fetchInsightsData(client.adAccountId, since, until, accessToken);
-        const card = buildGoogleChatCard(client.name, data, label, period || 'yesterday');
+        const card = buildGoogleChatCard(client.name, data, label, usePeriod, clientId, includePdfLink);
 
         await sendToGoogleChat(client.googleChatWebhook, card);
 
@@ -258,7 +260,7 @@ function countLeadsFromActions(actions, conversionType) {
 // ==========================================
 // CONSTRUIR CARD DO GOOGLE CHAT (v2)
 // ==========================================
-function buildGoogleChatCard(clientName, data, periodLabel, periodType) {
+function buildGoogleChatCard(clientName, data, periodLabel, periodType, clientId, includePdfLink) {
     const { summary, campaigns } = data;
 
     const fmtCurrency = (v) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -329,15 +331,21 @@ function buildGoogleChatCard(clientName, data, periodLabel, periodType) {
         sections.push({ header: "Destaques", widgets: highlightWidgets });
     }
 
+    const dashUrl = process.env.URL || "https://dashboardmilo.netlify.app";
+    const buttons = [{
+        text: "Abrir Dashboard",
+        onClick: { openLink: { url: dashUrl } }
+    }];
+
+    if (includePdfLink && clientId) {
+        buttons.push({
+            text: "📄 Gerar Relatorio PDF",
+            onClick: { openLink: { url: `${dashUrl}?autoReport=${encodeURIComponent(clientId)}&period=${periodType}` } }
+        });
+    }
+
     sections.push({
-        widgets: [{
-            buttonList: {
-                buttons: [{
-                    text: "Abrir Dashboard",
-                    onClick: { openLink: { url: process.env.URL || "https://dashboardmilo.netlify.app" } }
-                }]
-            }
-        }]
+        widgets: [{ buttonList: { buttons } }]
     });
 
     return {
