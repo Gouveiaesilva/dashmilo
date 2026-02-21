@@ -2271,7 +2271,7 @@ function renderOverviewRow(client, statusData, cardState) {
         balanceDisplay = '<span class="text-slate-500">--</span>';
     } else if (isPrepay) {
         balanceCents = getPrepaidRemainingCents(statusData);
-        const balanceColor = balanceCents <= 0 ? 'text-red-400' : 'text-emerald-400';
+        const balanceColor = balanceCents <= 0 ? 'text-red-400' : 'text-white';
         balanceDisplay = `<span class="${balanceColor} font-bold">${formatOverviewBalance(balanceCents, statusData.currency)}</span>`;
     } else {
         balanceCents = 999999999; // pos-pago no topo quando ordena por saldo
@@ -2405,7 +2405,7 @@ function renderOverviewCards() {
             balanceHTML = '<span class="text-slate-500 text-sm">--</span>';
         } else if (isPrepay) {
             const balanceCents = getPrepaidRemainingCents(statusData);
-            const balanceColor = balanceCents <= 0 ? 'text-red-400' : 'text-emerald-400';
+            const balanceColor = balanceCents <= 0 ? 'text-red-400' : 'text-white';
             balanceHTML = `<span class="${balanceColor} text-sm font-bold">${formatOverviewBalance(balanceCents, statusData.currency)}</span>`;
         } else {
             balanceHTML = '<span class="text-slate-400 flex items-center gap-1"><span class="material-symbols-outlined text-sm">credit_card</span><span class="text-xs">Cartao</span></span>';
