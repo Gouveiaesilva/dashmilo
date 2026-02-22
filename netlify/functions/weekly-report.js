@@ -19,7 +19,6 @@ exports.handler = async (event, context) => {
 
     try {
         const store = getClientStore();
-        const clients = await store.get("clients_list", { type: "json" }) || [];
 
         // Hora atual em BRT (UTC-3)
         const now = new Date();
@@ -27,6 +26,17 @@ exports.handler = async (event, context) => {
         const currentHour = String(brt.getUTCHours()).padStart(2, '0');
         const dayMap = { 0: 'dom', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat' };
         const currentDay = dayMap[brt.getUTCDay()];
+        const executionKey = `${brt.toISOString().split('T')[0]}_${currentHour}`;
+
+        // Protecao contra execucoes duplicadas na mesma hora
+        const lastRun = await store.get("weekly_report_last_run", { type: "text" }).catch(() => null);
+        if (lastRun === executionKey) {
+            console.log(`weekly-report: already ran for ${executionKey}, skipping`);
+            return;
+        }
+        await store.set("weekly_report_last_run", executionKey);
+
+        const clients = await store.get("clients_list", { type: "json" }) || [];
 
         console.log(`weekly-report: checking schedules at ${currentHour}:00 BRT, day=${currentDay}`);
 
