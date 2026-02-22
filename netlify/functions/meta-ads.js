@@ -637,11 +637,18 @@ function countLeads(actions, conversionType = 'form') {
 
     // Contar apenas o tipo de conversão correspondente ao objetivo da campanha
     if (conversionType === 'form') {
-        // Campanhas de LEADS: contar apenas preenchimentos de formulário
-        const formAction = actions.find(a => a.action_type === 'onsite_conversion.lead_grouped')
-            || actions.find(a => a.action_type === 'lead');
+        // Campanhas de LEADS: contar formularios nativos + leads no site (pixel)
+        // Somar tipos especificos; se nenhum existir, usar 'lead' (agregado) como fallback
+        const onsite = actions.find(a => a.action_type === 'onsite_conversion.lead_grouped');
+        const pixel = actions.find(a => a.action_type === 'offsite_conversion.fb_pixel_lead');
 
-        return formAction ? parseInt(formAction.value || 0) : 0;
+        if (onsite || pixel) {
+            return (onsite ? parseInt(onsite.value || 0) : 0)
+                 + (pixel ? parseInt(pixel.value || 0) : 0);
+        }
+
+        const leadAgg = actions.find(a => a.action_type === 'lead');
+        return leadAgg ? parseInt(leadAgg.value || 0) : 0;
     }
 
     if (conversionType === 'message') {

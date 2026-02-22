@@ -335,9 +335,16 @@ function countLeadsFromActions(actions, conversionType) {
     if (!actions || !Array.isArray(actions)) return 0;
 
     if (conversionType === 'form') {
-        const formAction = actions.find(a => a.action_type === 'onsite_conversion.lead_grouped')
-            || actions.find(a => a.action_type === 'lead');
-        return formAction ? parseInt(formAction.value || 0) : 0;
+        const onsite = actions.find(a => a.action_type === 'onsite_conversion.lead_grouped');
+        const pixel = actions.find(a => a.action_type === 'offsite_conversion.fb_pixel_lead');
+
+        if (onsite || pixel) {
+            return (onsite ? parseInt(onsite.value || 0) : 0)
+                 + (pixel ? parseInt(pixel.value || 0) : 0);
+        }
+
+        const leadAgg = actions.find(a => a.action_type === 'lead');
+        return leadAgg ? parseInt(leadAgg.value || 0) : 0;
     }
 
     if (conversionType === 'message') {
