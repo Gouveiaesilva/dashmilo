@@ -263,12 +263,20 @@ async function fetchCampaignsWithInsights(accountId, accessToken, params) {
 
         if (adsetsResult.data) {
             adsetsResult.data.forEach(adset => {
-                if (adset.destination_type === 'WHATSAPP' && !excludedOptGoals.includes(adset.optimization_goal)) {
+                const dest = (adset.destination_type || '').toUpperCase();
+                if (dest.includes('WHATSAPP') && !excludedOptGoals.includes(adset.optimization_goal)) {
                     whatsappEngagementIds.add(adset.campaign_id);
                 }
             });
         }
     }
+
+    // Verificar campanhas que geraram conversas mesmo sem destination_type WhatsApp
+    const messagingActionTypes = [
+        'onsite_conversion.messaging_conversation_started_7d',
+        'onsite_conversion.total_messaging_connection',
+        'onsite_conversion.messaging_first_reply'
+    ];
 
     // Incluir campanhas com gasto > 0 cujo resultado seja leads ou conversas iniciadas
     const campaignsWithInsights = allCampaigns.filter(campaign => {
@@ -285,9 +293,14 @@ async function fetchCampaignsWithInsights(accountId, accessToken, params) {
             return true;
         }
 
-        // Campanhas de ENGAJAMENTO ou VENDAS - apenas se o destino for WhatsApp
+        // Campanhas de ENGAJAMENTO ou VENDAS
         if (campaign.objective === 'OUTCOME_ENGAGEMENT' || campaign.objective === 'OUTCOME_SALES') {
-            return whatsappEngagementIds.has(campaign.id);
+            // Incluir se destination_type contém WHATSAPP
+            if (whatsappEngagementIds.has(campaign.id)) return true;
+            // OU se gerou conversas de mensagem nas actions
+            const actions = insightData.actions || [];
+            const hasMessaging = actions.some(a => messagingActionTypes.includes(a.action_type));
+            if (hasMessaging) return true;
         }
 
         return false;
