@@ -562,14 +562,18 @@ async function generateReport() {
 
         // 4. Guardar dados para export PDF posterior
         progressBar.style.width = '90%';
+        var versionSelect = document.getElementById('reportVersionFilter');
+        var version = versionSelect ? versionSelect.value : 'complete';
         reportPreviewData = {
             clientName: clientName,
             period: period,
+            periodPreset: period.preset,
             prevPeriod: prevPeriod,
             reportData: reportData,
             prevData: prevData,
             insights: insights,
-            creatives: creatives
+            creatives: creatives,
+            version: version
         };
 
         // 5. Renderizar preview em tela
@@ -611,11 +615,13 @@ async function exportReportPDF() {
         buildReportPDF({
             clientName: reportPreviewData.clientName,
             period: reportPreviewData.period,
+            periodPreset: reportPreviewData.periodPreset,
             prevPeriod: reportPreviewData.prevPeriod,
             reportData: reportPreviewData.reportData,
             prevData: reportPreviewData.prevData,
             insights: reportPreviewData.insights,
-            logoData: logoData
+            logoData: logoData,
+            version: reportPreviewData.version || 'complete'
         });
         showToast('PDF exportado com sucesso!');
     } catch (error) {
@@ -655,13 +661,14 @@ function renderReportPreview(data) {
     }
 
     // Secoes dinâmicas
+    var isComplete = data.version !== 'simplified';
     var sections = [];
     sections.push({ id: 'resumo', num: '01', label: 'Resumo Executivo', icon: 'summarize', color: 'primary' });
     if (insights.topCampaigns.length > 0) sections.push({ id: 'campanhas', num: String(sections.length + 1).padStart(2, '0'), label: 'Melhores Campanhas', icon: 'military_tech', color: 'amber' });
     if (insights.topCreatives.length > 0) sections.push({ id: 'criativos', num: String(sections.length + 1).padStart(2, '0'), label: 'Melhores Criativos', icon: 'palette', color: 'violet' });
-    if (insights.replicar.length > 0) sections.push({ id: 'replicar', num: String(sections.length + 1).padStart(2, '0'), label: 'O Que Funcionou', icon: 'check_circle', color: 'emerald' });
-    if (insights.melhorar.length > 0) sections.push({ id: 'melhorar', num: String(sections.length + 1).padStart(2, '0'), label: 'Oportunidades de Melhoria', icon: 'trending_up', color: 'amber' });
-    if (insights.ajustar.length > 0) sections.push({ id: 'ajustar', num: String(sections.length + 1).padStart(2, '0'), label: 'Ajustes Necessarios', icon: 'warning', color: 'red' });
+    if (isComplete && insights.replicar.length > 0) sections.push({ id: 'replicar', num: String(sections.length + 1).padStart(2, '0'), label: 'O Que Funcionou', icon: 'check_circle', color: 'emerald' });
+    if (isComplete && insights.melhorar.length > 0) sections.push({ id: 'melhorar', num: String(sections.length + 1).padStart(2, '0'), label: 'Oportunidades de Melhoria', icon: 'trending_up', color: 'amber' });
+    if (isComplete && insights.ajustar.length > 0) sections.push({ id: 'ajustar', num: String(sections.length + 1).padStart(2, '0'), label: 'Ajustes Necessarios', icon: 'warning', color: 'red' });
 
     var html = '<div class="report-preview">';
 
@@ -790,22 +797,22 @@ function renderReportPreview(data) {
         sIdx++;
     }
 
-    // 04. O Que Funcionou (replicar)
-    if (insights.replicar.length > 0) {
+    // 04. O Que Funcionou (replicar) — somente versao completa
+    if (isComplete && insights.replicar.length > 0) {
         html += buildReportSection('replicar', sections[sIdx].num, 'O Que Funcionou', 'check_circle', 'emerald',
             buildInsightCards(insights.replicar, 'emerald'), true);
         sIdx++;
     }
 
-    // 05. Oportunidades de Melhoria
-    if (insights.melhorar.length > 0) {
+    // 05. Oportunidades de Melhoria — somente versao completa
+    if (isComplete && insights.melhorar.length > 0) {
         html += buildReportSection('melhorar', sections[sIdx].num, 'Oportunidades de Melhoria', 'trending_up', 'amber',
             buildInsightCards(insights.melhorar, 'amber'), true);
         sIdx++;
     }
 
-    // 06. Ajustes Necessarios
-    if (insights.ajustar.length > 0) {
+    // 06. Ajustes Necessarios — somente versao completa
+    if (isComplete && insights.ajustar.length > 0) {
         html += buildReportSection('ajustar', sections[sIdx].num, 'Ajustes Necessarios', 'warning', 'red',
             buildInsightCards(insights.ajustar, 'red'), true);
         sIdx++;
@@ -964,10 +971,12 @@ function buildReportPDF(params) {
         y = drawPDFCreativesTable(doc, y, params.insights.topCreatives, colors);
     }
 
-    // INSIGHTS
-    if (y > 235) { doc.addPage(); y = 20; }
-    y += 2;
-    y = drawPDFInsights(doc, y, params, colors);
+    // INSIGHTS (somente versao completa)
+    if (params.version !== 'simplified') {
+        if (y > 235) { doc.addPage(); y = 20; }
+        y += 2;
+        y = drawPDFInsights(doc, y, params, colors);
+    }
 
     // FOOTER
     var totalPages = doc.internal.getNumberOfPages();
@@ -976,10 +985,16 @@ function buildReportPDF(params) {
         drawPDFFooter(doc, i, totalPages, colors);
     }
 
-    // Salvar
-    var clientSlug = params.clientName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    var dateSlug = params.period.since.replace(/-/g, '');
-    doc.save('relatorio-' + clientSlug + '-' + dateSlug + '.pdf');
+    // Salvar com nomenclatura padrao
+    var presetLabels = {
+        'last_7d': 'ULTIMOS 7 DIAS', 'last_14d': 'ULTIMOS 14 DIAS',
+        'last_28d': 'ULTIMOS 28 DIAS', 'last_30d': 'ULTIMOS 30 DIAS',
+        'this_week': 'ESTA SEMANA', 'last_week': 'SEMANA PASSADA',
+        'this_month': 'ESTE MES', 'last_month': 'MES PASSADO'
+    };
+    var periodLabel = presetLabels[params.periodPreset] || params.period.label;
+    var clientName = params.clientName.toUpperCase();
+    doc.save('[MILO][' + clientName + '][RELATORIO][' + periodLabel + '].pdf');
 }
 
 // ==========================================
