@@ -11,7 +11,6 @@ var macroAnalysisData = null;
 async function generateMacroAnalysis() {
     var clientSelect = document.getElementById('reportClientFilter');
     var selectedOption = clientSelect.options[clientSelect.selectedIndex];
-
     if (!clientSelect.value || !selectedOption) return;
 
     var adAccountId = selectedOption.dataset.adAccountId;
@@ -19,12 +18,11 @@ async function generateMacroAnalysis() {
     var period = getReportPeriod();
     var prevPeriod = getPreviousPeriod(period.since, period.until);
 
-    // Esconder preview de relatorio e resultado anterior
+    // Esconder outros previews
     document.getElementById('reportPreview').classList.add('hidden');
     document.getElementById('reportProgress').classList.add('hidden');
     document.getElementById('macroAnalysisResult').classList.add('hidden');
 
-    // Mostrar progresso
     var progressEl = document.getElementById('macroAnalysisProgress');
     var progressText = document.getElementById('macroProgressText');
     var progressBar = document.getElementById('macroProgressBar');
@@ -49,9 +47,7 @@ async function generateMacroAnalysis() {
         var response = await fetch(url);
         var result = await response.json();
 
-        if (!response.ok || result.error) {
-            throw new Error(result.message || 'Erro ao buscar dados da analise macro');
-        }
+        if (!response.ok || result.error) throw new Error(result.message || 'Erro ao buscar dados');
 
         progressBar.style.width = '60%';
         progressText.textContent = 'Analisando dados...';
@@ -62,13 +58,7 @@ async function generateMacroAnalysis() {
         progressBar.style.width = '80%';
         progressText.textContent = 'Renderizando analise...';
 
-        macroAnalysisData = {
-            clientName: clientName,
-            period: period,
-            prevPeriod: prevPeriod,
-            analysis: analysis,
-            raw: raw
-        };
+        macroAnalysisData = { clientName: clientName, period: period, prevPeriod: prevPeriod, analysis: analysis, raw: raw };
 
         renderMacroAnalysis(macroAnalysisData);
 
@@ -95,27 +85,15 @@ function analyzeMacroData(raw, period, prevPeriod) {
     var prevDaily = raw.prevDaily || [];
     var ads = raw.ads || [];
 
-    // Agrupar daily por campanha
     var currentByCampaign = groupDailybyCampaign(currentDaily);
     var prevByCampaign = groupDailybyCampaign(prevDaily);
 
-    // 1. Visao geral
     var overview = buildOverview(currentByCampaign, prevByCampaign, campaigns);
-
-    // 2. Timeline de mudancas
     var timeline = buildTimeline(currentByCampaign, prevByCampaign, campaigns, period);
-
-    // 3. Performance por campanha
     var campaignPerformance = buildCampaignPerformance(currentByCampaign, prevByCampaign, campaigns);
-
-    // 4. Campanhas novas e pausadas
     var lifecycle = buildLifecycle(currentByCampaign, prevByCampaign, campaigns);
-
-    // 5. Top criativos
     var creatives = buildCreativeAnalysis(ads);
-
-    // 6. Diagnostico
-    var diagnostic = buildDiagnostic(overview, campaignPerformance, lifecycle, creatives);
+    var diagnostic = buildDiagnostic(overview, campaignPerformance, lifecycle, creatives, currentByCampaign, prevByCampaign, period);
 
     return { overview: overview, timeline: timeline, campaignPerformance: campaignPerformance, lifecycle: lifecycle, creatives: creatives, diagnostic: diagnostic };
 }
@@ -124,19 +102,13 @@ function groupDailybyCampaign(dailyRows) {
     var map = {};
     dailyRows.forEach(function(row) {
         var id = row.campaign_id;
-        if (!map[id]) {
-            map[id] = { id: id, name: row.campaign_name, days: [], totalSpend: 0, totalImpressions: 0, totalClicks: 0, totalReach: 0, actions: {} };
-        }
+        if (!map[id]) map[id] = { id: id, name: row.campaign_name, days: [], totalSpend: 0, totalImpressions: 0, totalClicks: 0, totalReach: 0, actions: {} };
         var spend = parseFloat(row.spend || 0);
-        var impressions = parseInt(row.impressions || 0);
-        var clicks = parseInt(row.clicks || 0);
-        var reach = parseInt(row.reach || 0);
-        map[id].days.push({ date: row.date_start, spend: spend, impressions: impressions, clicks: clicks, reach: reach, actions: row.actions || [] });
+        map[id].days.push({ date: row.date_start, spend: spend, impressions: parseInt(row.impressions || 0), clicks: parseInt(row.clicks || 0), reach: parseInt(row.reach || 0), actions: row.actions || [] });
         map[id].totalSpend += spend;
-        map[id].totalImpressions += impressions;
-        map[id].totalClicks += clicks;
-        map[id].totalReach += reach;
-        // Agregar actions
+        map[id].totalImpressions += parseInt(row.impressions || 0);
+        map[id].totalClicks += parseInt(row.clicks || 0);
+        map[id].totalReach += parseInt(row.reach || 0);
         (row.actions || []).forEach(function(a) {
             if (!map[id].actions[a.action_type]) map[id].actions[a.action_type] = 0;
             map[id].actions[a.action_type] += parseInt(a.value || 0);
@@ -148,97 +120,52 @@ function groupDailybyCampaign(dailyRows) {
 function getMainMetric(objective, actions) {
     var leadTypes = ['onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead', 'lead'];
     var msgTypes = ['onsite_conversion.messaging_conversation_started_7d', 'messaging_conversation_started_7d'];
-
     if (objective === 'OUTCOME_LEADS' || objective === 'LEAD_GENERATION') {
-        var total = 0;
-        leadTypes.forEach(function(t) { total += (actions[t] || 0); });
-        if (total === 0) msgTypes.forEach(function(t) { total += (actions[t] || 0); });
-        return { value: total, label: 'Leads', costLabel: 'CPL' };
+        var t = 0; leadTypes.forEach(function(k) { t += (actions[k] || 0); });
+        if (t === 0) msgTypes.forEach(function(k) { t += (actions[k] || 0); });
+        return { value: t, label: 'Leads', costLabel: 'CPL' };
     }
     if (objective === 'MESSAGES' || objective === 'OUTCOME_ENGAGEMENT') {
-        var msgs = 0;
-        msgTypes.forEach(function(t) { msgs += (actions[t] || 0); });
-        if (msgs > 0) return { value: msgs, label: 'Conversas', costLabel: 'Custo/Conversa' };
-        var leads = 0;
-        leadTypes.forEach(function(t) { leads += (actions[t] || 0); });
-        if (leads > 0) return { value: leads, label: 'Leads', costLabel: 'CPL' };
+        var m = 0; msgTypes.forEach(function(k) { m += (actions[k] || 0); });
+        if (m > 0) return { value: m, label: 'Conversas', costLabel: 'Custo/Conversa' };
+        var l = 0; leadTypes.forEach(function(k) { l += (actions[k] || 0); });
+        if (l > 0) return { value: l, label: 'Leads', costLabel: 'CPL' };
         return { value: 0, label: 'Conversas', costLabel: 'Custo/Conversa' };
     }
     if (objective === 'OUTCOME_TRAFFIC' || objective === 'LINK_CLICKS') {
-        var linkClicks = actions['link_click'] || actions['landing_page_view'] || 0;
-        return { value: linkClicks, label: 'Cliques', costLabel: 'CPC' };
+        return { value: actions['link_click'] || actions['landing_page_view'] || 0, label: 'Cliques', costLabel: 'CPC' };
     }
     if (objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH') {
         return { value: 0, label: 'Alcance', costLabel: 'CPM', useReach: true };
     }
-    // Default
-    var anyLeads = 0;
-    leadTypes.forEach(function(t) { anyLeads += (actions[t] || 0); });
-    return { value: anyLeads, label: 'Resultados', costLabel: 'Custo/Resultado' };
+    if (objective === 'OUTCOME_SALES') {
+        var p = actions['purchase'] || actions['offsite_conversion.fb_pixel_purchase'] || 0;
+        if (p > 0) return { value: p, label: 'Vendas', costLabel: 'CPA' };
+    }
+    var any = 0; leadTypes.forEach(function(k) { any += (actions[k] || 0); });
+    return { value: any, label: 'Resultados', costLabel: 'Custo/Resultado' };
 }
 
-function getObjectiveLabel(objective) {
-    var labels = {
-        'OUTCOME_LEADS': 'Leads', 'LEAD_GENERATION': 'Leads',
-        'MESSAGES': 'Mensagens', 'OUTCOME_ENGAGEMENT': 'Engajamento',
-        'OUTCOME_TRAFFIC': 'Trafego', 'LINK_CLICKS': 'Trafego',
-        'OUTCOME_AWARENESS': 'Reconhecimento', 'BRAND_AWARENESS': 'Reconhecimento',
-        'REACH': 'Alcance', 'OUTCOME_SALES': 'Vendas',
-        'POST_ENGAGEMENT': 'Engajamento', 'VIDEO_VIEWS': 'Video Views'
-    };
-    return labels[objective] || objective;
+function getObjectiveLabel(obj) {
+    var m = { 'OUTCOME_LEADS': 'Leads', 'LEAD_GENERATION': 'Leads', 'MESSAGES': 'Mensagens', 'OUTCOME_ENGAGEMENT': 'Engajamento', 'OUTCOME_TRAFFIC': 'Trafego', 'LINK_CLICKS': 'Trafego', 'OUTCOME_AWARENESS': 'Reconhecimento', 'BRAND_AWARENESS': 'Reconhecimento', 'REACH': 'Alcance', 'OUTCOME_SALES': 'Vendas', 'POST_ENGAGEMENT': 'Engajamento', 'VIDEO_VIEWS': 'Video Views' };
+    return m[obj] || obj;
 }
+
+function calcPctChange(c, p) { if (p === 0) return c > 0 ? 100 : 0; return ((c - p) / p) * 100; }
 
 // ==========================================
 // SECAO 1: VISAO GERAL
 // ==========================================
 
 function buildOverview(currentMap, prevMap, campaigns) {
-    var current = { spend: 0, impressions: 0, clicks: 0, reach: 0, leads: 0, activeCampaigns: 0 };
+    var leadTypes = ['onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead', 'lead', 'onsite_conversion.messaging_conversation_started_7d', 'messaging_conversation_started_7d'];
+    var cur = { spend: 0, impressions: 0, clicks: 0, reach: 0, leads: 0, activeCampaigns: 0 };
     var prev = { spend: 0, impressions: 0, clicks: 0, reach: 0, leads: 0, activeCampaigns: 0 };
-
-    var leadTypes = ['onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead', 'lead',
-                     'onsite_conversion.messaging_conversation_started_7d', 'messaging_conversation_started_7d'];
-
-    Object.keys(currentMap).forEach(function(id) {
-        var c = currentMap[id];
-        current.spend += c.totalSpend;
-        current.impressions += c.totalImpressions;
-        current.clicks += c.totalClicks;
-        current.reach += c.totalReach;
-        current.activeCampaigns++;
-        leadTypes.forEach(function(t) { current.leads += (c.actions[t] || 0); });
-    });
-
-    Object.keys(prevMap).forEach(function(id) {
-        var p = prevMap[id];
-        prev.spend += p.totalSpend;
-        prev.impressions += p.totalImpressions;
-        prev.clicks += p.totalClicks;
-        prev.reach += p.totalReach;
-        prev.activeCampaigns++;
-        leadTypes.forEach(function(t) { prev.leads += (p.actions[t] || 0); });
-    });
-
-    current.cpl = current.leads > 0 ? current.spend / current.leads : 0;
+    Object.values(currentMap).forEach(function(c) { cur.spend += c.totalSpend; cur.impressions += c.totalImpressions; cur.clicks += c.totalClicks; cur.reach += c.totalReach; cur.activeCampaigns++; leadTypes.forEach(function(t) { cur.leads += (c.actions[t] || 0); }); });
+    Object.values(prevMap).forEach(function(p) { prev.spend += p.totalSpend; prev.impressions += p.totalImpressions; prev.clicks += p.totalClicks; prev.reach += p.totalReach; prev.activeCampaigns++; leadTypes.forEach(function(t) { prev.leads += (p.actions[t] || 0); }); });
+    cur.cpl = cur.leads > 0 ? cur.spend / cur.leads : 0;
     prev.cpl = prev.leads > 0 ? prev.spend / prev.leads : 0;
-
-    return {
-        current: current,
-        prev: prev,
-        changes: {
-            spend: calcPctChange(current.spend, prev.spend),
-            impressions: calcPctChange(current.impressions, prev.impressions),
-            leads: calcPctChange(current.leads, prev.leads),
-            cpl: calcPctChange(current.cpl, prev.cpl),
-            campaigns: current.activeCampaigns - prev.activeCampaigns
-        }
-    };
-}
-
-function calcPctChange(current, previous) {
-    if (previous === 0) return current > 0 ? 100 : 0;
-    return ((current - previous) / previous) * 100;
+    return { current: cur, prev: prev, changes: { spend: calcPctChange(cur.spend, prev.spend), impressions: calcPctChange(cur.impressions, prev.impressions), leads: calcPctChange(cur.leads, prev.leads), cpl: calcPctChange(cur.cpl, prev.cpl), campaigns: cur.activeCampaigns - prev.activeCampaigns } };
 }
 
 // ==========================================
@@ -247,88 +174,62 @@ function calcPctChange(current, previous) {
 
 function buildTimeline(currentMap, prevMap, campaigns, period) {
     var events = [];
-
-    // Campanhas novas (no atual, nao no anterior)
     Object.keys(currentMap).forEach(function(id) {
         if (!prevMap[id]) {
             var c = currentMap[id];
             var days = c.days.filter(function(d) { return d.spend > 0; }).sort(function(a, b) { return a.date.localeCompare(b.date); });
-            if (days.length > 0) {
-                events.push({ date: days[0].date, type: 'new', icon: 'add_circle', color: 'emerald', text: 'Campanha "' + c.name + '" iniciou veiculacao', spend: c.totalSpend });
-            }
+            if (days.length > 0) events.push({ date: days[0].date, type: 'new', icon: 'add_circle', color: 'emerald', text: 'Campanha "' + c.name + '" iniciou veiculacao', detail: 'Investiu ' + fmtCur(c.totalSpend) + ' em ' + days.length + ' dia(s)' });
         }
     });
-
-    // Campanhas pausadas (no anterior, nao no atual)
     Object.keys(prevMap).forEach(function(id) {
         if (!currentMap[id]) {
             var p = prevMap[id];
-            events.push({ date: period.since, type: 'stopped', icon: 'pause_circle', color: 'red', text: 'Campanha "' + p.name + '" parou de gastar', spend: p.totalSpend });
+            events.push({ date: period.since, type: 'stopped', icon: 'pause_circle', color: 'red', text: 'Campanha "' + p.name + '" parou de gastar', detail: 'Gastava ' + fmtCur(p.totalSpend) + ' no periodo anterior' });
         }
     });
-
-    // Deteccao mid-periodo (inicio/pausa no meio do periodo)
     Object.keys(currentMap).forEach(function(id) {
-        if (prevMap[id]) {
-            var c = currentMap[id];
-            var activeDays = c.days.filter(function(d) { return d.spend > 0; }).sort(function(a, b) { return a.date.localeCompare(b.date); });
-            if (activeDays.length === 0) return;
-
-            var firstDay = activeDays[0].date;
-            var lastDay = activeDays[activeDays.length - 1].date;
-
-            if (firstDay > period.since) {
-                events.push({ date: firstDay, type: 'resumed', icon: 'play_circle', color: 'blue', text: 'Campanha "' + c.name + '" retomou em ' + formatDateBR(firstDay) });
-            }
-            if (lastDay < period.until) {
-                events.push({ date: lastDay, type: 'paused_mid', icon: 'pause', color: 'amber', text: 'Campanha "' + c.name + '" parou de gastar em ' + formatDateBR(lastDay) });
-            }
+        if (!prevMap[id]) return;
+        var c = currentMap[id];
+        var activeDays = c.days.filter(function(d) { return d.spend > 0; }).sort(function(a, b) { return a.date.localeCompare(b.date); });
+        if (activeDays.length === 0) return;
+        var firstDay = activeDays[0].date;
+        var lastDay = activeDays[activeDays.length - 1].date;
+        if (firstDay > period.since) events.push({ date: firstDay, type: 'resumed', icon: 'play_circle', color: 'blue', text: 'Campanha "' + c.name + '" retomou veiculacao', detail: 'Reativada em ' + formatDateBR(firstDay) });
+        if (lastDay < period.until) events.push({ date: lastDay, type: 'paused_mid', icon: 'pause', color: 'amber', text: 'Campanha "' + c.name + '" parou de gastar', detail: 'Ultimo dia ativo: ' + formatDateBR(lastDay) });
+        // Gaps no meio
+        var allDates = c.days.map(function(d) { return d.date; }).sort();
+        for (var gi = 1; gi < activeDays.length; gi++) {
+            var prevDate = new Date(activeDays[gi - 1].date);
+            var currDate = new Date(activeDays[gi].date);
+            var gapDays = Math.round((currDate - prevDate) / 86400000);
+            if (gapDays >= 3) events.push({ date: activeDays[gi - 1].date, type: 'gap', icon: 'schedule', color: 'amber', text: 'Campanha "' + c.name + '" ficou ' + gapDays + ' dia(s) sem gastar', detail: 'De ' + formatDateBR(activeDays[gi - 1].date) + ' a ' + formatDateBR(activeDays[gi].date) });
         }
     });
-
-    // Mudancas de orcamento (media diaria mudou >50%)
+    // Mudancas de orcamento
     Object.keys(currentMap).forEach(function(id) {
         if (!prevMap[id]) return;
         var cDays = currentMap[id].days.filter(function(d) { return d.spend > 0; });
         var pDays = prevMap[id].days.filter(function(d) { return d.spend > 0; });
-        if (cDays.length === 0 || pDays.length === 0) return;
-
+        if (cDays.length < 2 || pDays.length < 2) return;
         var cAvg = currentMap[id].totalSpend / cDays.length;
         var pAvg = prevMap[id].totalSpend / pDays.length;
         if (pAvg === 0) return;
-
         var ratio = cAvg / pAvg;
-        if (ratio > 1.5) {
-            events.push({ date: period.since, type: 'budget_up', icon: 'trending_up', color: 'blue', text: 'Campanha "' + currentMap[id].name + '" aumentou gasto diario medio em ' + Math.round((ratio - 1) * 100) + '%' });
-        } else if (ratio < 0.5) {
-            events.push({ date: period.since, type: 'budget_down', icon: 'trending_down', color: 'amber', text: 'Campanha "' + currentMap[id].name + '" reduziu gasto diario medio em ' + Math.round((1 - ratio) * 100) + '%' });
-        }
+        if (ratio > 1.5) events.push({ date: period.since, type: 'budget_up', icon: 'trending_up', color: 'blue', text: 'Campanha "' + currentMap[id].name + '": gasto diario medio subiu ' + Math.round((ratio - 1) * 100) + '%', detail: 'De ' + fmtCur(pAvg) + '/dia para ' + fmtCur(cAvg) + '/dia' });
+        else if (ratio < 0.5) events.push({ date: period.since, type: 'budget_down', icon: 'trending_down', color: 'amber', text: 'Campanha "' + currentMap[id].name + '": gasto diario medio caiu ' + Math.round((1 - ratio) * 100) + '%', detail: 'De ' + fmtCur(pAvg) + '/dia para ' + fmtCur(cAvg) + '/dia' });
     });
-
-    // Picos anormais de gasto (conta total por dia)
+    // Picos anormais
     var dailyTotals = {};
-    Object.values(currentMap).forEach(function(c) {
-        c.days.forEach(function(d) {
-            if (!dailyTotals[d.date]) dailyTotals[d.date] = 0;
-            dailyTotals[d.date] += d.spend;
+    Object.values(currentMap).forEach(function(c) { c.days.forEach(function(d) { if (!dailyTotals[d.date]) dailyTotals[d.date] = 0; dailyTotals[d.date] += d.spend; }); });
+    var dailyVals = Object.keys(dailyTotals).map(function(date) { return { date: date, spend: dailyTotals[date] }; });
+    if (dailyVals.length > 3) {
+        var avg = dailyVals.reduce(function(s, d) { return s + d.spend; }, 0) / dailyVals.length;
+        var stdDev = Math.sqrt(dailyVals.reduce(function(s, d) { return s + Math.pow(d.spend - avg, 2); }, 0) / dailyVals.length);
+        if (stdDev > 0 && avg > 0) dailyVals.forEach(function(d) {
+            if (d.spend > avg + 2 * stdDev) events.push({ date: d.date, type: 'spike', icon: 'priority_high', color: 'amber', text: 'Pico de gasto na conta: ' + fmtCur(d.spend), detail: 'Media do periodo: ' + fmtCur(avg) + ' | Desvio: +' + Math.round(((d.spend - avg) / avg) * 100) + '%' });
+            else if (d.spend < avg - 1.5 * stdDev && d.spend > 0) events.push({ date: d.date, type: 'dip', icon: 'arrow_downward', color: 'amber', text: 'Queda de gasto na conta: ' + fmtCur(d.spend), detail: 'Media do periodo: ' + fmtCur(avg) + ' | Desvio: ' + Math.round(((d.spend - avg) / avg) * 100) + '%' });
         });
-    });
-    var dailyValues = Object.keys(dailyTotals).map(function(date) { return { date: date, spend: dailyTotals[date] }; });
-    if (dailyValues.length > 2) {
-        var avg = dailyValues.reduce(function(s, d) { return s + d.spend; }, 0) / dailyValues.length;
-        var variance = dailyValues.reduce(function(s, d) { return s + Math.pow(d.spend - avg, 2); }, 0) / dailyValues.length;
-        var stdDev = Math.sqrt(variance);
-        if (stdDev > 0) {
-            dailyValues.forEach(function(d) {
-                if (d.spend > avg + 2 * stdDev) {
-                    events.push({ date: d.date, type: 'spike', icon: 'priority_high', color: 'amber', text: 'Pico de gasto: ' + fmtCur(d.spend) + ' (media: ' + fmtCur(avg) + ')' });
-                } else if (d.spend < avg - 2 * stdDev && d.spend > 0) {
-                    events.push({ date: d.date, type: 'dip', icon: 'arrow_downward', color: 'amber', text: 'Queda de gasto: ' + fmtCur(d.spend) + ' (media: ' + fmtCur(avg) + ')' });
-                }
-            });
-        }
     }
-
     events.sort(function(a, b) { return a.date.localeCompare(b.date); });
     return events;
 }
@@ -338,101 +239,41 @@ function buildTimeline(currentMap, prevMap, campaigns, period) {
 // ==========================================
 
 function buildCampaignPerformance(currentMap, prevMap, campaigns) {
-    var campaignMeta = {};
-    campaigns.forEach(function(c) { campaignMeta[c.id] = c; });
-
+    var meta = {}; campaigns.forEach(function(c) { meta[c.id] = c; });
     var results = [];
-
-    // Campanhas ativas no periodo atual
     Object.keys(currentMap).forEach(function(id) {
-        var c = currentMap[id];
-        var meta = campaignMeta[id] || {};
-        var objective = meta.objective || '';
-        var metric = getMainMetric(objective, c.actions);
-
-        var current = {
-            spend: c.totalSpend,
-            impressions: c.totalImpressions,
-            result: metric.useReach ? c.totalReach : metric.value,
-            costPerResult: metric.value > 0 ? c.totalSpend / metric.value : (metric.useReach && c.totalReach > 0 ? (c.totalSpend / c.totalReach) * 1000 : 0)
-        };
-
-        var prev = null;
-        var changes = null;
-        var verdict = 'nova';
-
+        var c = currentMap[id]; var m = meta[id] || {}; var obj = m.objective || '';
+        var metric = getMainMetric(obj, c.actions);
+        var cur = { spend: c.totalSpend, impressions: c.totalImpressions, clicks: c.totalClicks, reach: c.totalReach, result: metric.useReach ? c.totalReach : metric.value, costPerResult: metric.value > 0 ? c.totalSpend / metric.value : (metric.useReach && c.totalReach > 0 ? (c.totalSpend / c.totalReach) * 1000 : 0), days: c.days.filter(function(d) { return d.spend > 0; }).length };
+        var prev = null; var changes = null; var verdict = 'nova';
         if (prevMap[id]) {
-            var p = prevMap[id];
-            var pMetric = getMainMetric(objective, p.actions);
-            prev = {
-                spend: p.totalSpend,
-                impressions: p.totalImpressions,
-                result: pMetric.useReach ? p.totalReach : pMetric.value,
-                costPerResult: pMetric.value > 0 ? p.totalSpend / pMetric.value : (pMetric.useReach && p.totalReach > 0 ? (p.totalSpend / p.totalReach) * 1000 : 0)
-            };
-            changes = {
-                spend: calcPctChange(current.spend, prev.spend),
-                result: calcPctChange(current.result, prev.result),
-                costPerResult: calcPctChange(current.costPerResult, prev.costPerResult)
-            };
-            verdict = getVerdict(changes);
+            var p = prevMap[id]; var pm = getMainMetric(obj, p.actions);
+            prev = { spend: p.totalSpend, impressions: p.totalImpressions, result: pm.useReach ? p.totalReach : pm.value, costPerResult: pm.value > 0 ? p.totalSpend / pm.value : (pm.useReach && p.totalReach > 0 ? (p.totalSpend / p.totalReach) * 1000 : 0) };
+            changes = { spend: calcPctChange(cur.spend, prev.spend), result: calcPctChange(cur.result, prev.result), costPerResult: calcPctChange(cur.costPerResult, prev.costPerResult) };
+            verdict = getVerdict(changes, cur, prev);
         }
-
-        results.push({
-            id: id,
-            name: c.name,
-            objective: objective,
-            objectiveLabel: getObjectiveLabel(objective),
-            status: (meta.effective_status || meta.status || '').toUpperCase(),
-            metricLabel: metric.label,
-            costLabel: metric.costLabel,
-            current: current,
-            prev: prev,
-            changes: changes,
-            verdict: verdict
-        });
+        results.push({ id: id, name: c.name, objective: obj, objectiveLabel: getObjectiveLabel(obj), status: (m.effective_status || m.status || '').toUpperCase(), metricLabel: metric.label, costLabel: metric.costLabel, current: cur, prev: prev, changes: changes, verdict: verdict });
     });
-
-    // Campanhas que tinham gasto no anterior mas nao no atual
     Object.keys(prevMap).forEach(function(id) {
         if (currentMap[id]) return;
-        var p = prevMap[id];
-        var meta = campaignMeta[id] || {};
-        var objective = meta.objective || '';
-        var metric = getMainMetric(objective, p.actions);
-
-        results.push({
-            id: id,
-            name: p.name,
-            objective: objective,
-            objectiveLabel: getObjectiveLabel(objective),
-            status: (meta.effective_status || meta.status || 'PAUSED').toUpperCase(),
-            metricLabel: metric.label,
-            costLabel: metric.costLabel,
-            current: { spend: 0, impressions: 0, result: 0, costPerResult: 0 },
-            prev: { spend: p.totalSpend, impressions: p.totalImpressions, result: metric.value, costPerResult: metric.value > 0 ? p.totalSpend / metric.value : 0 },
-            changes: null,
-            verdict: 'pausada'
-        });
+        var p = prevMap[id]; var m = meta[id] || {}; var obj = m.objective || '';
+        var pm = getMainMetric(obj, p.actions);
+        results.push({ id: id, name: p.name, objective: obj, objectiveLabel: getObjectiveLabel(obj), status: (m.effective_status || 'PAUSED').toUpperCase(), metricLabel: pm.label, costLabel: pm.costLabel, current: { spend: 0, impressions: 0, result: 0, costPerResult: 0 }, prev: { spend: p.totalSpend, impressions: p.totalImpressions, result: pm.value, costPerResult: pm.value > 0 ? p.totalSpend / pm.value : 0 }, changes: null, verdict: 'pausada' });
     });
-
     results.sort(function(a, b) { return b.current.spend - a.current.spend; });
     return results;
 }
 
-function getVerdict(changes) {
-    if (!changes) return 'nova';
-    var cpr = changes.costPerResult;
-    var res = changes.result;
-    var spe = changes.spend;
-
-    if (res > 10 && cpr < -10) return 'melhorando';
-    if (res > 10 && cpr >= -10 && cpr <= 10) return 'escalando_bem';
-    if (spe > 20 && cpr > 20) return 'escalando_mal';
-    if (cpr > 20 || res < -20) return 'piorando';
-    if (Math.abs(cpr) <= 10 && Math.abs(res) <= 10) return 'estavel';
-    if (res > 10) return 'melhorando';
-    if (cpr < -10) return 'melhorando';
+function getVerdict(ch, cur, prev) {
+    if (!ch) return 'nova';
+    if (cur.result === 0 && cur.spend > 0) return 'sem_resultado';
+    if (ch.result > 15 && ch.costPerResult < -10) return 'melhorando';
+    if (ch.result > 15 && ch.spend > 15 && Math.abs(ch.costPerResult) <= 15) return 'escalando_bem';
+    if (ch.spend > 20 && ch.costPerResult > 25) return 'escalando_mal';
+    if (ch.costPerResult > 25 || (ch.result < -25 && cur.spend > 10)) return 'piorando';
+    if (Math.abs(ch.costPerResult) <= 15 && Math.abs(ch.result) <= 15) return 'estavel';
+    if (ch.result > 15) return 'melhorando';
+    if (ch.costPerResult < -15) return 'melhorando';
     return 'estavel';
 }
 
@@ -441,31 +282,20 @@ function getVerdict(changes) {
 // ==========================================
 
 function buildLifecycle(currentMap, prevMap, campaigns) {
-    var campaignMeta = {};
-    campaigns.forEach(function(c) { campaignMeta[c.id] = c; });
-
-    var newCampaigns = [];
-    var stoppedCampaigns = [];
-
+    var meta = {}; campaigns.forEach(function(c) { meta[c.id] = c; });
+    var newC = []; var stopped = [];
     Object.keys(currentMap).forEach(function(id) {
-        if (!prevMap[id]) {
-            var c = currentMap[id];
-            var meta = campaignMeta[id] || {};
-            var metric = getMainMetric(meta.objective || '', c.actions);
-            newCampaigns.push({ name: c.name, objective: getObjectiveLabel(meta.objective || ''), spend: c.totalSpend, result: metric.value, resultLabel: metric.label });
-        }
+        if (prevMap[id]) return;
+        var c = currentMap[id]; var m = meta[id] || {}; var metric = getMainMetric(m.objective || '', c.actions);
+        var days = c.days.filter(function(d) { return d.spend > 0; });
+        newC.push({ name: c.name, objective: getObjectiveLabel(m.objective || ''), spend: c.totalSpend, result: metric.value, resultLabel: metric.label, days: days.length, avgDaily: days.length > 0 ? c.totalSpend / days.length : 0 });
     });
-
     Object.keys(prevMap).forEach(function(id) {
-        if (!currentMap[id]) {
-            var p = prevMap[id];
-            var meta = campaignMeta[id] || {};
-            var metric = getMainMetric(meta.objective || '', p.actions);
-            stoppedCampaigns.push({ name: p.name, objective: getObjectiveLabel(meta.objective || ''), spend: p.totalSpend, result: metric.value, resultLabel: metric.label });
-        }
+        if (currentMap[id]) return;
+        var p = prevMap[id]; var m = meta[id] || {}; var metric = getMainMetric(m.objective || '', p.actions);
+        stopped.push({ name: p.name, objective: getObjectiveLabel(m.objective || ''), spend: p.totalSpend, result: metric.value, resultLabel: metric.label });
     });
-
-    return { newCampaigns: newCampaigns, stoppedCampaigns: stoppedCampaigns };
+    return { newCampaigns: newC, stoppedCampaigns: stopped };
 }
 
 // ==========================================
@@ -474,525 +304,530 @@ function buildLifecycle(currentMap, prevMap, campaigns) {
 
 function buildCreativeAnalysis(ads) {
     if (!ads || ads.length === 0) return { top: [], bottom: [] };
-
-    var leadTypes = ['onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead', 'lead',
-                     'onsite_conversion.messaging_conversation_started_7d', 'messaging_conversation_started_7d'];
-
+    var leadTypes = ['onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead', 'lead', 'onsite_conversion.messaging_conversation_started_7d', 'messaging_conversation_started_7d'];
     var processed = ads.map(function(ad) {
-        var spend = parseFloat(ad.spend || 0);
-        var impressions = parseInt(ad.impressions || 0);
-        var clicks = parseInt(ad.clicks || 0);
-        var results = 0;
-        (ad.actions || []).forEach(function(a) {
-            if (leadTypes.indexOf(a.action_type) !== -1) results += parseInt(a.value || 0);
-        });
-        return {
-            id: ad.ad_id,
-            name: ad.ad_name,
-            campaignName: ad.campaign_name || '',
-            spend: spend,
-            impressions: impressions,
-            clicks: clicks,
-            results: results,
-            cpr: results > 0 ? spend / results : (spend > 0 ? Infinity : 0)
-        };
+        var spend = parseFloat(ad.spend || 0); var impr = parseInt(ad.impressions || 0); var clicks = parseInt(ad.clicks || 0); var res = 0;
+        (ad.actions || []).forEach(function(a) { if (leadTypes.indexOf(a.action_type) !== -1) res += parseInt(a.value || 0); });
+        return { id: ad.ad_id, name: ad.ad_name, campaignName: ad.campaign_name || '', spend: spend, impressions: impr, clicks: clicks, results: res, cpr: res > 0 ? spend / res : (spend > 0 ? Infinity : 0), ctr: impr > 0 ? (clicks / impr * 100) : 0 };
     }).filter(function(a) { return a.spend > 0 && a.impressions > 100; });
-
-    var withResults = processed.filter(function(a) { return a.results > 0; });
-    withResults.sort(function(a, b) { return a.cpr - b.cpr; });
-
-    var top = withResults.slice(0, 3);
-    var bottom = processed.filter(function(a) { return a.results === 0 && a.spend > 0; })
-        .sort(function(a, b) { return b.spend - a.spend; })
-        .slice(0, 3);
-
-    // Se nao houver sem resultado, pegar os piores CPR
-    if (bottom.length === 0 && withResults.length > 3) {
-        bottom = withResults.slice(-3).reverse();
-    }
-
+    var withRes = processed.filter(function(a) { return a.results > 0; }).sort(function(a, b) { return a.cpr - b.cpr; });
+    var top = withRes.slice(0, 5);
+    var bottom = processed.filter(function(a) { return a.results === 0; }).sort(function(a, b) { return b.spend - a.spend; }).slice(0, 5);
+    if (bottom.length === 0 && withRes.length > 5) bottom = withRes.slice(-3).reverse();
     return { top: top, bottom: bottom };
 }
 
 // ==========================================
-// SECAO 6: DIAGNOSTICO
+// SECAO 6: DIAGNOSTICO APROFUNDADO
 // ==========================================
 
-function buildDiagnostic(overview, campaignPerformance, lifecycle, creatives) {
+function buildDiagnostic(overview, perf, lifecycle, creatives, currentMap, prevMap, period) {
     var items = [];
-    var curr = overview.current;
-    var changes = overview.changes;
+    var cur = overview.current;
+    var ch = overview.changes;
+    var active = perf.filter(function(c) { return c.current.spend > 0; });
 
-    // Concentracao de investimento
-    var activeCampaigns = campaignPerformance.filter(function(c) { return c.current.spend > 0; });
-    if (activeCampaigns.length > 0 && curr.spend > 0) {
-        var topSpend = activeCampaigns[0];
-        var pct = (topSpend.current.spend / curr.spend) * 100;
-        if (pct > 70 && activeCampaigns.length > 1) {
-            items.push({ type: 'warning', icon: 'pie_chart', text: 'A conta concentra ' + Math.round(pct) + '% do investimento na campanha "' + topSpend.name + '" — risco de dependencia.' });
-        }
+    // --- INVESTIMENTO ---
+    // Concentracao
+    if (active.length > 1 && cur.spend > 0) {
+        var topSpend = active[0];
+        var pct = (topSpend.current.spend / cur.spend) * 100;
+        if (pct > 80) items.push({ type: 'danger', icon: 'pie_chart', text: 'Concentracao critica: a campanha "' + topSpend.name + '" concentra ' + Math.round(pct) + '% de todo o investimento da conta (' + fmtCur(topSpend.current.spend) + ' de ' + fmtCur(cur.spend) + '). Qualquer queda nela impacta toda a operacao.' });
+        else if (pct > 60) items.push({ type: 'warning', icon: 'pie_chart', text: 'A campanha "' + topSpend.name + '" concentra ' + Math.round(pct) + '% do investimento total. Considere diversificar para reduzir dependencia.' });
     }
 
-    // Campanhas sem resultado
-    var noResults = activeCampaigns.filter(function(c) { return c.current.result === 0 && c.current.spend > 10; });
-    if (noResults.length > 0) {
-        var totalWaste = noResults.reduce(function(s, c) { return s + c.current.spend; }, 0);
-        items.push({ type: 'danger', icon: 'money_off', text: noResults.length + ' campanha(s) gastaram ' + fmtCur(totalWaste) + ' sem gerar nenhum resultado — revisar ou pausar.' });
+    // Investimento total mudou significativamente
+    if (Math.abs(ch.spend) > 30 && cur.spend > 50) {
+        if (ch.spend > 0) items.push({ type: 'info', icon: 'payments', text: 'Investimento total subiu ' + Math.round(ch.spend) + '% em relacao ao periodo anterior (de ' + fmtCur(overview.prev.spend) + ' para ' + fmtCur(cur.spend) + '). ' + (ch.leads > ch.spend * 0.7 ? 'Os resultados acompanharam o aumento — escalagem saudavel.' : 'Os resultados nao acompanharam proporcionalmente — atencao a eficiencia.') });
+        else items.push({ type: 'warning', icon: 'payments', text: 'Investimento total caiu ' + Math.round(Math.abs(ch.spend)) + '% em relacao ao periodo anterior (de ' + fmtCur(overview.prev.spend) + ' para ' + fmtCur(cur.spend) + ').' });
+    }
+
+    // --- RESULTADOS E EFICIENCIA ---
+    // Sem resultado geral
+    if (cur.spend > 20 && cur.leads === 0) {
+        items.push({ type: 'danger', icon: 'error', text: 'A conta investiu ' + fmtCur(cur.spend) + ' no periodo sem gerar nenhum resultado mensuravel (lead, conversa ou conversao). Revise urgentemente as campanhas, criativos e segmentacao.' });
     }
 
     // CPL geral subiu
-    if (changes.cpl > 15 && curr.leads > 0) {
-        var worstCampaigns = campaignPerformance
-            .filter(function(c) { return c.changes && c.changes.costPerResult > 20 && c.current.result > 0; })
-            .map(function(c) { return c.name; }).slice(0, 2);
-        var detail = worstCampaigns.length > 0 ? ' — impactado por: ' + worstCampaigns.join(', ') : '';
-        items.push({ type: 'warning', icon: 'trending_up', text: 'Custo por resultado geral subiu ' + Math.round(changes.cpl) + '% em relacao ao periodo anterior' + detail + '.' });
+    if (ch.cpl > 20 && cur.leads > 0 && overview.prev.leads > 0) {
+        var worst = perf.filter(function(c) { return c.changes && c.changes.costPerResult > 25 && c.current.result > 0; }).map(function(c) { return '"' + c.name + '" (+' + Math.round(c.changes.costPerResult) + '%)'; }).slice(0, 3);
+        items.push({ type: 'warning', icon: 'trending_up', text: 'Custo por resultado geral subiu ' + Math.round(ch.cpl) + '% (de ' + fmtCur(overview.prev.cpl) + ' para ' + fmtCur(cur.cpl) + ').' + (worst.length > 0 ? ' Principais responsaveis: ' + worst.join(', ') + '.' : '') });
     }
-
     // CPL geral caiu
-    if (changes.cpl < -15 && curr.leads > 0) {
-        items.push({ type: 'success', icon: 'trending_down', text: 'Custo por resultado geral caiu ' + Math.round(Math.abs(changes.cpl)) + '% — boa performance no periodo.' });
+    if (ch.cpl < -15 && cur.leads > 2 && overview.prev.leads > 2) {
+        var best = perf.filter(function(c) { return c.changes && c.changes.costPerResult < -15 && c.current.result > 0; }).map(function(c) { return '"' + c.name + '" (' + Math.round(c.changes.costPerResult) + '%)'; }).slice(0, 3);
+        items.push({ type: 'success', icon: 'trending_down', text: 'Custo por resultado geral caiu ' + Math.round(Math.abs(ch.cpl)) + '% (de ' + fmtCur(overview.prev.cpl) + ' para ' + fmtCur(cur.cpl) + '). Otima performance!' + (best.length > 0 ? ' Destaque: ' + best.join(', ') + '.' : '') });
     }
 
-    // Campanhas novas performando bem
+    // Resultados subiram
+    if (ch.leads > 25 && cur.leads > 3) {
+        items.push({ type: 'success', icon: 'arrow_upward', text: 'Resultados totais cresceram ' + Math.round(ch.leads) + '% (de ' + overview.prev.leads + ' para ' + cur.leads + ').' + (ch.spend < ch.leads * 0.5 ? ' Crescimento organico, sem aumento proporcional de investimento.' : '') });
+    }
+    // Resultados cairam
+    if (ch.leads < -25 && overview.prev.leads > 3) {
+        items.push({ type: 'danger', icon: 'arrow_downward', text: 'Resultados totais cairam ' + Math.round(Math.abs(ch.leads)) + '% (de ' + overview.prev.leads + ' para ' + cur.leads + ').' + (Math.abs(ch.spend) < 15 ? ' O investimento se manteve semelhante, indicando perda de eficiencia.' : '') });
+    }
+
+    // --- CAMPANHAS SEM RESULTADO ---
+    var noResults = active.filter(function(c) { return c.current.result === 0 && c.current.spend > 10; });
+    if (noResults.length > 0) {
+        var totalWaste = noResults.reduce(function(s, c) { return s + c.current.spend; }, 0);
+        var names = noResults.map(function(c) { return '"' + c.name + '" (' + fmtCur(c.current.spend) + ')'; }).slice(0, 4);
+        items.push({ type: 'danger', icon: 'money_off', text: noResults.length + ' campanha(s) gastaram ' + fmtCur(totalWaste) + ' sem gerar nenhum resultado: ' + names.join(', ') + '. Revise criativos e segmentacao ou pause para realocar verba.' });
+    }
+
+    // --- CAMPANHAS PIORANDO ---
+    var worsening = perf.filter(function(c) { return c.verdict === 'piorando'; });
+    if (worsening.length > 0) {
+        worsening.forEach(function(c) {
+            var detail = '';
+            if (c.changes) {
+                if (c.changes.costPerResult > 25) detail += 'custo/resultado subiu ' + Math.round(c.changes.costPerResult) + '%';
+                if (c.changes.result < -25) detail += (detail ? ' e ' : '') + 'resultados cairam ' + Math.round(Math.abs(c.changes.result)) + '%';
+            }
+            items.push({ type: 'warning', icon: 'warning', text: 'Campanha "' + c.name + '" com piora significativa' + (detail ? ': ' + detail : '') + '. ' + (c.current.spend > 50 ? 'Por investir ' + fmtCur(c.current.spend) + ', impacta o resultado geral da conta.' : 'Investimento baixo (' + fmtCur(c.current.spend) + '), impacto limitado.') });
+        });
+    }
+
+    // --- ESCALAGEM ---
+    var scalingBad = perf.filter(function(c) { return c.verdict === 'escalando_mal'; });
+    scalingBad.forEach(function(c) {
+        items.push({ type: 'warning', icon: 'speed', text: 'Campanha "' + c.name + '" esta escalando mal: investimento subiu ' + Math.round(c.changes.spend) + '% mas custo/resultado subiu ' + Math.round(c.changes.costPerResult) + '%. Considere voltar ao orcamento anterior e otimizar antes de escalar novamente.' });
+    });
+    var scalingGood = perf.filter(function(c) { return c.verdict === 'escalando_bem'; });
+    scalingGood.forEach(function(c) {
+        items.push({ type: 'success', icon: 'rocket_launch', text: 'Campanha "' + c.name + '" escalou bem: investimento subiu ' + Math.round(c.changes.spend) + '% e resultados subiram ' + Math.round(c.changes.result) + '% com custo/resultado estavel. Continue monitorando.' });
+    });
+
+    // --- CAMPANHAS NOVAS ---
     if (lifecycle.newCampaigns.length > 0) {
         var goodNew = lifecycle.newCampaigns.filter(function(c) { return c.result > 0; });
-        if (goodNew.length > 0) {
-            items.push({ type: 'success', icon: 'new_releases', text: goodNew.length + ' campanha(s) nova(s) ja geraram resultados — acompanhe a escalabilidade.' });
-        }
+        var badNew = lifecycle.newCampaigns.filter(function(c) { return c.result === 0 && c.spend > 10; });
+        if (goodNew.length > 0) items.push({ type: 'success', icon: 'new_releases', text: goodNew.length + ' campanha(s) nova(s) ja geraram resultados: ' + goodNew.map(function(c) { return '"' + c.name + '" (' + c.result + ' ' + c.resultLabel + ', ' + fmtCur(c.spend) + ')'; }).join(', ') + '.' });
+        if (badNew.length > 0) items.push({ type: 'warning', icon: 'hourglass_top', text: badNew.length + ' campanha(s) nova(s) ainda sem resultado: ' + badNew.map(function(c) { return '"' + c.name + '" (' + fmtCur(c.spend) + ' investidos)'; }).join(', ') + '. Acompanhe de perto — pode ser fase de aprendizado do algoritmo.' });
     }
 
-    // Campanhas piorando
-    var worsening = campaignPerformance.filter(function(c) { return c.verdict === 'piorando'; });
-    if (worsening.length > 0) {
-        items.push({ type: 'warning', icon: 'warning', text: worsening.length + ' campanha(s) com piora significativa: ' + worsening.map(function(c) { return c.name; }).slice(0, 2).join(', ') + '. Considere revisar criativos e segmentacao.' });
+    // --- CAMPANHAS PAUSADAS ---
+    if (lifecycle.stoppedCampaigns.length > 0) {
+        var goodStopped = lifecycle.stoppedCampaigns.filter(function(c) { return c.result > 0; });
+        if (goodStopped.length > 0) items.push({ type: 'info', icon: 'info', text: goodStopped.length + ' campanha(s) que geravam resultado foram pausadas: ' + goodStopped.map(function(c) { return '"' + c.name + '" (' + c.result + ' ' + c.resultLabel + ')'; }).join(', ') + '. Se a pausa foi intencional, verifique se ha campanhas substitutas cobrindo a demanda.' });
     }
 
-    // Criativos sem resultado
+    // --- CRIATIVOS ---
+    if (creatives.top.length > 0) {
+        var bestAd = creatives.top[0];
+        items.push({ type: 'success', icon: 'star', text: 'Criativo mais eficiente: "' + bestAd.name + '" com ' + bestAd.results + ' resultado(s) a ' + fmtCur(bestAd.cpr) + ' cada (CTR: ' + bestAd.ctr.toFixed(1) + '%). Considere usar abordagem semelhante em novos criativos.' });
+    }
     if (creatives.bottom.length > 0) {
-        var bottomSpend = creatives.bottom.reduce(function(s, c) { return s + c.spend; }, 0);
-        items.push({ type: 'info', icon: 'image_not_supported', text: creatives.bottom.length + ' anuncio(s) com gasto de ' + fmtCur(bottomSpend) + ' sem resultados — considere substituir criativos.' });
+        var worstTotal = creatives.bottom.reduce(function(s, a) { return s + a.spend; }, 0);
+        items.push({ type: 'warning', icon: 'image_not_supported', text: creatives.bottom.length + ' anuncio(s) gastaram ' + fmtCur(worstTotal) + ' sem gerar resultado. Considere substituir criativos: ' + creatives.bottom.map(function(a) { return '"' + a.name + '"'; }).slice(0, 3).join(', ') + '.' });
     }
 
-    if (items.length === 0) {
-        items.push({ type: 'success', icon: 'check_circle', text: 'Conta operando dentro dos parametros normais no periodo analisado.' });
+    // --- PADRAO DE GASTO ---
+    var dailyTotals = {};
+    Object.values(currentMap).forEach(function(c) { c.days.forEach(function(d) { if (!dailyTotals[d.date]) dailyTotals[d.date] = 0; dailyTotals[d.date] += d.spend; }); });
+    var dailyVals = Object.values(dailyTotals);
+    if (dailyVals.length > 3) {
+        var min = Math.min.apply(null, dailyVals.filter(function(v) { return v > 0; }));
+        var max = Math.max.apply(null, dailyVals);
+        if (max > 0 && min > 0 && max / min > 3) items.push({ type: 'info', icon: 'equalizer', text: 'Grande variacao no gasto diario: de ' + fmtCur(min) + ' a ' + fmtCur(max) + '. Pode indicar inconsistencia na entrega ou orcamentos muito variados entre campanhas.' });
     }
+
+    if (items.length === 0) items.push({ type: 'success', icon: 'check_circle', text: 'Conta operando dentro dos parametros normais no periodo analisado. Sem alertas significativos.' });
 
     return items;
 }
 
 // ==========================================
-// HELPERS DE FORMATACAO
+// FORMATACAO
 // ==========================================
 
-function fmtCur(value) {
-    return 'R$ ' + value.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-}
-
-function fmtNum(value) {
-    return value.toLocaleString('pt-BR');
-}
-
-function fmtPct(value) {
-    var prefix = value > 0 ? '+' : '';
-    return prefix + Math.round(value) + '%';
-}
+function fmtCur(v) { return 'R$ ' + v.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+function fmtNum(v) { return Math.round(v).toLocaleString('pt-BR'); }
+function fmtPct(v) { return (v > 0 ? '+' : '') + Math.round(v) + '%'; }
 
 // ==========================================
-// RENDERIZACAO
+// RENDERIZACAO HTML
 // ==========================================
 
 function renderMacroAnalysis(data) {
     var container = document.getElementById('macroAnalysisResult');
-    var analysis = data.analysis;
-    var period = data.period;
-
+    var a = data.analysis;
+    var p = data.period;
     var html = '';
 
-    // Header com acoes
+    // Header
     html += '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
-    html += '<div class="flex items-center justify-between mb-4">';
-    html += '<div>';
-    html += '<h2 class="text-lg font-bold text-white flex items-center gap-2"><span class="material-symbols-outlined text-amber-400">query_stats</span> Analise Macro</h2>';
-    html += '<p class="text-xs text-slate-500 mt-1">' + data.clientName + ' — ' + formatDateBR(period.since) + ' a ' + formatDateBR(period.until) + '</p>';
-    html += '</div>';
-    html += '<button onclick="exportMacroAnalysisPDF()" class="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-bold transition-colors">';
-    html += '<span class="material-symbols-outlined text-base">picture_as_pdf</span> Exportar PDF</button>';
-    html += '</div>';
+    html += '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">';
+    html += '<div><h2 class="text-lg font-bold text-white flex items-center gap-2"><span class="material-symbols-outlined text-amber-400">query_stats</span> Analise Macro</h2>';
+    html += '<p class="text-xs text-slate-500 mt-1">' + data.clientName + ' — ' + formatDateBR(p.since) + ' a ' + formatDateBR(p.until) + ' (comparado com ' + formatDateBR(data.prevPeriod.since) + ' a ' + formatDateBR(data.prevPeriod.until) + ')</p></div>';
+    html += '<button onclick="exportMacroAnalysisPDF()" class="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-bold transition-colors shrink-0">';
+    html += '<span class="material-symbols-outlined text-base">picture_as_pdf</span> Exportar PDF</button></div>';
 
-    // Secao 1: Visao Geral
-    html += renderOverviewSection(analysis.overview);
+    // KPIs
+    html += renderOverviewHTML(a.overview);
     html += '</div>';
 
-    // Secao 2: Timeline
-    if (analysis.timeline.length > 0) {
-        html += renderTimelineSection(analysis.timeline);
-    }
+    // Timeline
+    if (a.timeline.length > 0) html += renderTimelineHTML(a.timeline);
 
-    // Secao 3: Performance por Campanha
-    html += renderCampaignPerformanceSection(analysis.campaignPerformance);
+    // Performance
+    html += renderPerformanceHTML(a.campaignPerformance);
 
-    // Secao 4: Ciclo de Vida
-    if (analysis.lifecycle.newCampaigns.length > 0 || analysis.lifecycle.stoppedCampaigns.length > 0) {
-        html += renderLifecycleSection(analysis.lifecycle);
-    }
+    // Lifecycle
+    if (a.lifecycle.newCampaigns.length > 0 || a.lifecycle.stoppedCampaigns.length > 0) html += renderLifecycleHTML(a.lifecycle);
 
-    // Secao 5: Criativos
-    if (analysis.creatives.top.length > 0 || analysis.creatives.bottom.length > 0) {
-        html += renderCreativesSection(analysis.creatives);
-    }
+    // Criativos
+    if (a.creatives.top.length > 0 || a.creatives.bottom.length > 0) html += renderCreativesHTML(a.creatives);
 
-    // Secao 6: Diagnostico
-    html += renderDiagnosticSection(analysis.diagnostic);
+    // Diagnostico
+    html += renderDiagnosticHTML(a.diagnostic);
 
     container.innerHTML = html;
 }
 
-function renderOverviewSection(overview) {
-    var curr = overview.current;
-    var ch = overview.changes;
-
-    function kpiCard(label, value, change, invertColor) {
-        var color = change > 0 ? (invertColor ? 'text-red-400' : 'text-emerald-400') : (change < 0 ? (invertColor ? 'text-emerald-400' : 'text-red-400') : 'text-slate-400');
-        var arrow = change > 0 ? 'arrow_upward' : (change < 0 ? 'arrow_downward' : 'remove');
-        return '<div class="bg-background-dark border border-border-dark rounded-xl p-4">' +
-            '<span class="text-[10px] font-bold text-slate-500 uppercase">' + label + '</span>' +
-            '<p class="text-xl font-bold text-white mt-1">' + value + '</p>' +
-            '<div class="flex items-center gap-1 mt-2 ' + color + ' text-xs font-bold">' +
-            '<span class="material-symbols-outlined text-xs">' + arrow + '</span>' +
-            '<span>' + fmtPct(change) + ' vs anterior</span></div></div>';
+function renderOverviewHTML(ov) {
+    var c = ov.current; var ch = ov.changes;
+    function kpi(label, value, change, invert) {
+        var col = change > 0 ? (invert ? 'text-red-400' : 'text-emerald-400') : (change < 0 ? (invert ? 'text-emerald-400' : 'text-red-400') : 'text-slate-400');
+        var arr = change > 0 ? 'arrow_upward' : (change < 0 ? 'arrow_downward' : 'remove');
+        return '<div class="bg-background-dark border border-border-dark rounded-xl p-4"><span class="text-[10px] font-bold text-slate-500 uppercase">' + label + '</span><p class="text-xl font-bold text-white mt-1">' + value + '</p><div class="flex items-center gap-1 mt-2 ' + col + ' text-xs font-bold"><span class="material-symbols-outlined text-xs">' + arr + '</span><span>' + fmtPct(change) + ' vs anterior</span></div></div>';
     }
-
-    var html = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">';
-    html += kpiCard('Investimento Total', fmtCur(curr.spend), ch.spend, false);
-    html += kpiCard('Impressoes', fmtNum(curr.impressions), ch.impressions, false);
-    html += kpiCard('Resultados (Leads/Conversas)', fmtNum(curr.leads), ch.leads, false);
-    html += kpiCard('Custo por Resultado', curr.cpl > 0 ? fmtCur(curr.cpl) : '--', ch.cpl, true);
-    html += '</div>';
-    html += '<p class="text-xs text-slate-500 mt-3"><span class="font-semibold text-white">' + curr.activeCampaigns + '</span> campanhas ativas no periodo';
-    if (ch.campaigns !== 0) {
-        html += ' (' + (ch.campaigns > 0 ? '+' : '') + ch.campaigns + ' vs anterior)';
-    }
-    html += '</p>';
-    return html;
+    var h = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-2">';
+    h += kpi('Investimento Total', fmtCur(c.spend), ch.spend, false);
+    h += kpi('Impressoes', fmtNum(c.impressions), ch.impressions, false);
+    h += kpi('Resultados', fmtNum(c.leads), ch.leads, false);
+    h += kpi('Custo por Resultado', c.cpl > 0 ? fmtCur(c.cpl) : '--', ch.cpl, true);
+    h += '</div>';
+    h += '<p class="text-xs text-slate-500 mt-3"><span class="font-semibold text-white">' + c.activeCampaigns + '</span> campanhas com veiculacao no periodo';
+    if (ch.campaigns !== 0) h += ' <span class="' + (ch.campaigns > 0 ? 'text-emerald-400' : 'text-red-400') + '">(' + (ch.campaigns > 0 ? '+' : '') + ch.campaigns + ' vs anterior)</span>';
+    h += '</p>';
+    return h;
 }
 
-function renderTimelineSection(timeline) {
-    var html = '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
-    html += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-amber-400 text-base">timeline</span> Timeline de Mudancas</h3>';
-    html += '<div class="space-y-2">';
-    timeline.forEach(function(event) {
-        var colorMap = { emerald: 'text-emerald-400 bg-emerald-500/10', red: 'text-red-400 bg-red-500/10', blue: 'text-blue-400 bg-blue-500/10', amber: 'text-amber-400 bg-amber-500/10' };
-        var colors = colorMap[event.color] || 'text-slate-400 bg-slate-500/10';
-        html += '<div class="flex items-start gap-3 p-3 rounded-lg ' + colors.split(' ')[1] + ' border border-' + event.color + '-500/10">';
-        html += '<span class="material-symbols-outlined ' + colors.split(' ')[0] + ' text-lg shrink-0 mt-0.5">' + event.icon + '</span>';
-        html += '<div class="flex-1 min-w-0">';
-        html += '<p class="text-sm text-white">' + event.text + '</p>';
-        html += '<p class="text-[10px] text-slate-500 mt-0.5">' + formatDateBR(event.date) + '</p>';
-        html += '</div></div>';
+function renderTimelineHTML(tl) {
+    var h = '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
+    h += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-amber-400 text-base">timeline</span> Timeline de Mudancas</h3>';
+    h += '<div class="space-y-2">';
+    tl.forEach(function(e) {
+        var bg = 'bg-' + e.color + '-500/10'; var bc = 'border-' + e.color + '-500/10'; var tc = 'text-' + e.color + '-400';
+        h += '<div class="flex items-start gap-3 p-3 rounded-lg ' + bg + ' border ' + bc + '">';
+        h += '<span class="material-symbols-outlined ' + tc + ' text-lg shrink-0 mt-0.5">' + e.icon + '</span>';
+        h += '<div class="flex-1 min-w-0"><p class="text-sm text-white">' + e.text + '</p>';
+        if (e.detail) h += '<p class="text-[11px] text-slate-400 mt-0.5">' + e.detail + '</p>';
+        h += '<p class="text-[10px] text-slate-500 mt-0.5">' + formatDateBR(e.date) + '</p></div></div>';
     });
-    html += '</div></div>';
-    return html;
+    h += '</div></div>';
+    return h;
 }
 
-function renderCampaignPerformanceSection(campaigns) {
-    var html = '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
-    html += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-amber-400 text-base">leaderboard</span> Performance por Campanha</h3>';
-
-    if (campaigns.length === 0) {
-        html += '<p class="text-sm text-slate-500">Nenhuma campanha com gasto no periodo.</p>';
-        html += '</div>';
-        return html;
-    }
-
-    // Tabela responsiva
-    html += '<div class="overflow-x-auto">';
-    html += '<table class="w-full text-xs">';
-    html += '<thead><tr class="text-slate-500 border-b border-border-dark">';
-    html += '<th class="text-left py-2 pr-3 font-semibold">Campanha</th>';
-    html += '<th class="text-left py-2 px-2 font-semibold hidden sm:table-cell">Tipo</th>';
-    html += '<th class="text-right py-2 px-2 font-semibold">Invest.</th>';
-    html += '<th class="text-right py-2 px-2 font-semibold">Resultado</th>';
-    html += '<th class="text-right py-2 px-2 font-semibold">Custo/Res.</th>';
-    html += '<th class="text-right py-2 px-2 font-semibold hidden sm:table-cell">Var.</th>';
-    html += '<th class="text-right py-2 pl-2 font-semibold">Status</th>';
-    html += '</tr></thead><tbody>';
-
-    campaigns.forEach(function(c) {
-        var verdictConfig = getVerdictConfig(c.verdict);
-        var cprText = c.current.costPerResult > 0 ? fmtCur(c.current.costPerResult) : '--';
-        var changeText = c.changes ? fmtPct(c.changes.costPerResult) : '--';
-        var changeColor = c.changes ? (c.changes.costPerResult > 10 ? 'text-red-400' : (c.changes.costPerResult < -10 ? 'text-emerald-400' : 'text-slate-400')) : 'text-slate-500';
-
-        html += '<tr class="border-b border-border-dark/50 hover:bg-background-dark/50">';
-        html += '<td class="py-2.5 pr-3"><span class="text-white font-medium truncate block max-w-[200px]" title="' + c.name + '">' + c.name + '</span></td>';
-        html += '<td class="py-2.5 px-2 text-slate-400 hidden sm:table-cell">' + c.objectiveLabel + '</td>';
-        html += '<td class="py-2.5 px-2 text-right text-white font-medium">' + fmtCur(c.current.spend) + '</td>';
-        html += '<td class="py-2.5 px-2 text-right text-white">' + fmtNum(c.current.result) + ' <span class="text-slate-500">' + c.metricLabel + '</span></td>';
-        html += '<td class="py-2.5 px-2 text-right text-white">' + cprText + '</td>';
-        html += '<td class="py-2.5 px-2 text-right ' + changeColor + ' hidden sm:table-cell">' + changeText + '</td>';
-        html += '<td class="py-2.5 pl-2 text-right"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ' + verdictConfig.classes + '">';
-        html += '<span class="material-symbols-outlined text-[10px]">' + verdictConfig.icon + '</span>' + verdictConfig.label + '</span></td>';
-        html += '</tr>';
+function renderPerformanceHTML(camps) {
+    var h = '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
+    h += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-amber-400 text-base">leaderboard</span> Performance por Campanha</h3>';
+    if (camps.length === 0) { h += '<p class="text-sm text-slate-500">Nenhuma campanha com gasto no periodo.</p></div>'; return h; }
+    h += '<div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-slate-500 border-b border-border-dark">';
+    h += '<th class="text-left py-2 pr-3 font-semibold">Campanha</th>';
+    h += '<th class="text-left py-2 px-2 font-semibold hidden sm:table-cell">Tipo</th>';
+    h += '<th class="text-right py-2 px-2 font-semibold">Invest.</th>';
+    h += '<th class="text-right py-2 px-2 font-semibold">Resultado</th>';
+    h += '<th class="text-right py-2 px-2 font-semibold">Custo/Res.</th>';
+    h += '<th class="text-right py-2 px-2 font-semibold hidden sm:table-cell">Var.</th>';
+    h += '<th class="text-right py-2 pl-2 font-semibold">Status</th>';
+    h += '</tr></thead><tbody>';
+    camps.forEach(function(c) {
+        var vc = getVerdictConfig(c.verdict);
+        var cpr = c.current.costPerResult > 0 && c.current.costPerResult !== Infinity ? fmtCur(c.current.costPerResult) : '--';
+        var chText = c.changes ? fmtPct(c.changes.costPerResult) : '--';
+        var chCol = c.changes ? (c.changes.costPerResult > 10 ? 'text-red-400' : (c.changes.costPerResult < -10 ? 'text-emerald-400' : 'text-slate-400')) : 'text-slate-500';
+        h += '<tr class="border-b border-border-dark/50 hover:bg-background-dark/50">';
+        h += '<td class="py-2.5 pr-3"><span class="text-white font-medium truncate block max-w-[200px]" title="' + c.name + '">' + c.name + '</span></td>';
+        h += '<td class="py-2.5 px-2 text-slate-400 hidden sm:table-cell">' + c.objectiveLabel + '</td>';
+        h += '<td class="py-2.5 px-2 text-right text-white font-medium">' + fmtCur(c.current.spend) + '</td>';
+        h += '<td class="py-2.5 px-2 text-right text-white">' + fmtNum(c.current.result) + ' <span class="text-slate-500 text-[10px]">' + c.metricLabel + '</span></td>';
+        h += '<td class="py-2.5 px-2 text-right text-white">' + cpr + '</td>';
+        h += '<td class="py-2.5 px-2 text-right ' + chCol + ' hidden sm:table-cell">' + chText + '</td>';
+        h += '<td class="py-2.5 pl-2 text-right"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ' + vc.classes + '"><span class="material-symbols-outlined text-[10px]">' + vc.icon + '</span>' + vc.label + '</span></td>';
+        h += '</tr>';
     });
-
-    html += '</tbody></table></div></div>';
-    return html;
+    h += '</tbody></table></div></div>';
+    return h;
 }
 
-function getVerdictConfig(verdict) {
-    var configs = {
-        melhorando: { label: 'Melhorando', icon: 'trending_up', classes: 'text-emerald-400 bg-emerald-500/10' },
-        escalando_bem: { label: 'Escalando', icon: 'rocket_launch', classes: 'text-blue-400 bg-blue-500/10' },
-        escalando_mal: { label: 'Escalando mal', icon: 'warning', classes: 'text-red-400 bg-red-500/10' },
-        piorando: { label: 'Piorando', icon: 'trending_down', classes: 'text-red-400 bg-red-500/10' },
-        estavel: { label: 'Estavel', icon: 'check_circle', classes: 'text-slate-400 bg-slate-500/10' },
-        nova: { label: 'Nova', icon: 'add_circle', classes: 'text-emerald-400 bg-emerald-500/10' },
-        pausada: { label: 'Pausada', icon: 'pause_circle', classes: 'text-red-400 bg-red-500/10' }
-    };
-    return configs[verdict] || configs.estavel;
+function getVerdictConfig(v) {
+    return { melhorando: { label: 'Melhorando', icon: 'trending_up', classes: 'text-emerald-400 bg-emerald-500/10' }, escalando_bem: { label: 'Escalando', icon: 'rocket_launch', classes: 'text-blue-400 bg-blue-500/10' }, escalando_mal: { label: 'Ineficiente', icon: 'warning', classes: 'text-red-400 bg-red-500/10' }, piorando: { label: 'Piorando', icon: 'trending_down', classes: 'text-red-400 bg-red-500/10' }, estavel: { label: 'Estavel', icon: 'check_circle', classes: 'text-slate-400 bg-slate-500/10' }, nova: { label: 'Nova', icon: 'add_circle', classes: 'text-emerald-400 bg-emerald-500/10' }, pausada: { label: 'Pausada', icon: 'pause_circle', classes: 'text-red-400 bg-red-500/10' }, sem_resultado: { label: 'Sem resultado', icon: 'block', classes: 'text-red-400 bg-red-500/10' } }[v] || { label: 'Estavel', icon: 'check_circle', classes: 'text-slate-400 bg-slate-500/10' };
 }
 
-function renderLifecycleSection(lifecycle) {
-    var html = '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">';
-
-    if (lifecycle.newCampaigns.length > 0) {
-        html += '<div class="bg-surface-dark border border-emerald-500/20 rounded-xl p-4 sm:p-6">';
-        html += '<h3 class="text-sm font-bold text-emerald-400 flex items-center gap-2 mb-3"><span class="material-symbols-outlined text-base">add_circle</span> Campanhas Novas (' + lifecycle.newCampaigns.length + ')</h3>';
-        html += '<div class="space-y-2">';
-        lifecycle.newCampaigns.forEach(function(c) {
-            html += '<div class="flex items-center justify-between text-xs p-2 bg-emerald-500/5 rounded-lg">';
-            html += '<div><span class="text-white font-medium">' + c.name + '</span><span class="text-slate-500 ml-2">' + c.objective + '</span></div>';
-            html += '<div class="text-right text-slate-400">' + fmtCur(c.spend) + ' | ' + c.result + ' ' + c.resultLabel + '</div>';
-            html += '</div>';
+function renderLifecycleHTML(lc) {
+    var h = '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">';
+    if (lc.newCampaigns.length > 0) {
+        h += '<div class="bg-surface-dark border border-emerald-500/20 rounded-xl p-4 sm:p-6">';
+        h += '<h3 class="text-sm font-bold text-emerald-400 flex items-center gap-2 mb-3"><span class="material-symbols-outlined text-base">add_circle</span> Campanhas Novas (' + lc.newCampaigns.length + ')</h3>';
+        h += '<div class="space-y-2">';
+        lc.newCampaigns.forEach(function(c) {
+            h += '<div class="flex items-center justify-between text-xs p-2.5 bg-emerald-500/5 rounded-lg gap-2">';
+            h += '<div class="min-w-0"><span class="text-white font-medium block truncate">' + c.name + '</span><span class="text-slate-500">' + c.objective + ' | ' + c.days + ' dia(s) ativo</span></div>';
+            h += '<div class="text-right shrink-0 text-slate-400">' + fmtCur(c.spend) + '<br>' + c.result + ' ' + c.resultLabel + '</div></div>';
         });
-        html += '</div></div>';
+        h += '</div></div>';
     }
-
-    if (lifecycle.stoppedCampaigns.length > 0) {
-        html += '<div class="bg-surface-dark border border-red-500/20 rounded-xl p-4 sm:p-6">';
-        html += '<h3 class="text-sm font-bold text-red-400 flex items-center gap-2 mb-3"><span class="material-symbols-outlined text-base">pause_circle</span> Campanhas Pausadas (' + lifecycle.stoppedCampaigns.length + ')</h3>';
-        html += '<div class="space-y-2">';
-        lifecycle.stoppedCampaigns.forEach(function(c) {
-            html += '<div class="flex items-center justify-between text-xs p-2 bg-red-500/5 rounded-lg">';
-            html += '<div><span class="text-white font-medium">' + c.name + '</span><span class="text-slate-500 ml-2">' + c.objective + '</span></div>';
-            html += '<div class="text-right text-slate-400">Gastava ' + fmtCur(c.spend) + '/periodo</div>';
-            html += '</div>';
+    if (lc.stoppedCampaigns.length > 0) {
+        h += '<div class="bg-surface-dark border border-red-500/20 rounded-xl p-4 sm:p-6">';
+        h += '<h3 class="text-sm font-bold text-red-400 flex items-center gap-2 mb-3"><span class="material-symbols-outlined text-base">pause_circle</span> Campanhas Pausadas (' + lc.stoppedCampaigns.length + ')</h3>';
+        h += '<div class="space-y-2">';
+        lc.stoppedCampaigns.forEach(function(c) {
+            h += '<div class="flex items-center justify-between text-xs p-2.5 bg-red-500/5 rounded-lg gap-2">';
+            h += '<div class="min-w-0"><span class="text-white font-medium block truncate">' + c.name + '</span><span class="text-slate-500">' + c.objective + '</span></div>';
+            h += '<div class="text-right shrink-0 text-slate-400">Gastava ' + fmtCur(c.spend) + '<br>' + c.result + ' ' + c.resultLabel + '</div></div>';
         });
-        html += '</div></div>';
+        h += '</div></div>';
     }
-
-    html += '</div>';
-    return html;
+    h += '</div>';
+    return h;
 }
 
-function renderCreativesSection(creatives) {
-    var html = '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
-    html += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-amber-400 text-base">ads_click</span> Analise de Criativos</h3>';
-    html += '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">';
-
-    if (creatives.top.length > 0) {
-        html += '<div>';
-        html += '<h4 class="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-1"><span class="material-symbols-outlined text-xs">emoji_events</span> Melhores por Eficiencia</h4>';
-        html += '<div class="space-y-1.5">';
-        creatives.top.forEach(function(ad, i) {
-            var medals = ['🥇', '🥈', '🥉'];
-            html += '<div class="flex items-center gap-2 text-xs p-2 bg-emerald-500/5 rounded-lg">';
-            html += '<span>' + (medals[i] || '') + '</span>';
-            html += '<div class="flex-1 min-w-0"><span class="text-white font-medium truncate block max-w-[180px]" title="' + ad.name + '">' + ad.name + '</span>';
-            html += '<span class="text-slate-500">' + ad.results + ' res. | ' + fmtCur(ad.cpr) + '/res.</span></div>';
-            html += '<span class="text-slate-400 shrink-0">' + fmtCur(ad.spend) + '</span></div>';
+function renderCreativesHTML(cr) {
+    var h = '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
+    h += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-amber-400 text-base">ads_click</span> Analise de Criativos</h3>';
+    h += '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">';
+    if (cr.top.length > 0) {
+        h += '<div><h4 class="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-1"><span class="material-symbols-outlined text-xs">emoji_events</span> Melhores por Eficiencia</h4><div class="space-y-1.5">';
+        var medals = ['1o', '2o', '3o', '4o', '5o'];
+        cr.top.forEach(function(ad, i) {
+            h += '<div class="flex items-center gap-2 text-xs p-2.5 bg-emerald-500/5 rounded-lg"><span class="text-emerald-400 font-bold w-5 text-center shrink-0">' + medals[i] + '</span>';
+            h += '<div class="flex-1 min-w-0"><span class="text-white font-medium truncate block" title="' + ad.name + '">' + ad.name + '</span>';
+            h += '<span class="text-slate-500">' + ad.results + ' res. a ' + fmtCur(ad.cpr) + ' | CTR: ' + ad.ctr.toFixed(1) + '%</span></div>';
+            h += '<span class="text-slate-400 shrink-0">' + fmtCur(ad.spend) + '</span></div>';
         });
-        html += '</div></div>';
+        h += '</div></div>';
     }
-
-    if (creatives.bottom.length > 0) {
-        html += '<div>';
-        html += '<h4 class="text-xs font-bold text-red-400 mb-2 flex items-center gap-1"><span class="material-symbols-outlined text-xs">thumb_down</span> Revisar / Sem Resultado</h4>';
-        html += '<div class="space-y-1.5">';
-        creatives.bottom.forEach(function(ad) {
-            html += '<div class="flex items-center gap-2 text-xs p-2 bg-red-500/5 rounded-lg">';
-            html += '<span class="material-symbols-outlined text-red-400 text-sm">close</span>';
-            html += '<div class="flex-1 min-w-0"><span class="text-white font-medium truncate block max-w-[180px]" title="' + ad.name + '">' + ad.name + '</span>';
-            html += '<span class="text-slate-500">' + ad.results + ' res. | ' + fmtNum(ad.impressions) + ' impr.</span></div>';
-            html += '<span class="text-slate-400 shrink-0">' + fmtCur(ad.spend) + '</span></div>';
+    if (cr.bottom.length > 0) {
+        h += '<div><h4 class="text-xs font-bold text-red-400 mb-2 flex items-center gap-1"><span class="material-symbols-outlined text-xs">thumb_down</span> Revisar / Sem Resultado</h4><div class="space-y-1.5">';
+        cr.bottom.forEach(function(ad) {
+            h += '<div class="flex items-center gap-2 text-xs p-2.5 bg-red-500/5 rounded-lg"><span class="material-symbols-outlined text-red-400 text-sm shrink-0">close</span>';
+            h += '<div class="flex-1 min-w-0"><span class="text-white font-medium truncate block" title="' + ad.name + '">' + ad.name + '</span>';
+            h += '<span class="text-slate-500">' + ad.results + ' res. | ' + fmtNum(ad.impressions) + ' impr. | CTR: ' + ad.ctr.toFixed(1) + '%</span></div>';
+            h += '<span class="text-slate-400 shrink-0">' + fmtCur(ad.spend) + '</span></div>';
         });
-        html += '</div></div>';
+        h += '</div></div>';
     }
-
-    html += '</div></div>';
-    return html;
+    h += '</div></div>';
+    return h;
 }
 
-function renderDiagnosticSection(items) {
-    var html = '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
-    html += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-amber-400 text-base">psychology</span> Diagnostico e Recomendacoes</h3>';
-    html += '<div class="space-y-2">';
-
-    items.forEach(function(item) {
-        var colorMap = { success: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/10', warning: 'text-amber-400 bg-amber-500/10 border-amber-500/10', danger: 'text-red-400 bg-red-500/10 border-red-500/10', info: 'text-blue-400 bg-blue-500/10 border-blue-500/10' };
-        var colors = colorMap[item.type] || colorMap.info;
-        var parts = colors.split(' ');
-        html += '<div class="flex items-start gap-3 p-3 rounded-lg ' + parts[1] + ' border ' + parts[2] + '">';
-        html += '<span class="material-symbols-outlined ' + parts[0] + ' text-lg shrink-0 mt-0.5">' + item.icon + '</span>';
-        html += '<p class="text-sm text-white">' + item.text + '</p>';
-        html += '</div>';
+function renderDiagnosticHTML(items) {
+    var h = '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
+    h += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-amber-400 text-base">psychology</span> Diagnostico e Recomendacoes</h3>';
+    h += '<div class="space-y-2">';
+    items.forEach(function(it) {
+        var cm = { success: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/10', warning: 'text-amber-400 bg-amber-500/10 border-amber-500/10', danger: 'text-red-400 bg-red-500/10 border-red-500/10', info: 'text-blue-400 bg-blue-500/10 border-blue-500/10' };
+        var cls = (cm[it.type] || cm.info).split(' ');
+        h += '<div class="flex items-start gap-3 p-3 rounded-lg ' + cls[1] + ' border ' + cls[2] + '">';
+        h += '<span class="material-symbols-outlined ' + cls[0] + ' text-lg shrink-0 mt-0.5">' + it.icon + '</span>';
+        h += '<p class="text-sm text-slate-200 leading-relaxed">' + it.text + '</p></div>';
     });
-
-    html += '</div></div>';
-    return html;
+    h += '</div></div>';
+    return h;
 }
 
 // ==========================================
-// EXPORTACAO PDF
+// EXPORTACAO PDF (padrao visual do relatorio)
 // ==========================================
 
 function exportMacroAnalysisPDF() {
     if (!macroAnalysisData) return;
-
     var data = macroAnalysisData;
-    var analysis = data.analysis;
+    var a = data.analysis;
+
     var doc = new jspdf.jsPDF('p', 'mm', 'a4');
-    var pageWidth = 210;
-    var margin = 15;
-    var contentWidth = pageWidth - 2 * margin;
-    var y = margin;
+    var W = 210, M = 15, CW = W - 2 * M;
+    var y = 0;
 
-    function checkPage(needed) {
-        if (y + needed > 280) {
-            doc.addPage();
-            y = margin;
-        }
+    // Cores (mesmo padrao do relatorio)
+    var colors = {
+        primary: [245, 158, 11],    // amber
+        dark: [15, 23, 42],
+        text: [30, 41, 59],
+        textLight: [100, 116, 139],
+        green: [16, 185, 129],
+        red: [239, 68, 68],
+        bgLight: [248, 250, 252],
+        border: [226, 232, 240],
+        white: [255, 255, 255],
+        blue: [59, 130, 246]
+    };
+
+    function setColor(c) { doc.setTextColor(c[0], c[1], c[2]); }
+    function setFill(c) { doc.setFillColor(c[0], c[1], c[2]); }
+    function setDraw(c) { doc.setDrawColor(c[0], c[1], c[2]); }
+
+    function checkPage(needed) { if (y + needed > 280) { addFooter(); doc.addPage(); y = M; } }
+
+    var pageNum = 1;
+    function addFooter() {
+        doc.setFontSize(6.5); setColor(colors.textLight);
+        doc.text('Milo MKT | Analise Macro gerada automaticamente pelo Painel Gerencial Meta Ads', M, 290);
+        doc.text('Pagina ' + pageNum, W - M, 290, { align: 'right' });
+        pageNum++;
     }
 
-    function drawSectionTitle(title, iconColor) {
-        checkPage(15);
-        doc.setFillColor(30, 30, 40);
-        doc.roundedRect(margin, y, contentWidth, 10, 2, 2, 'F');
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(iconColor[0], iconColor[1], iconColor[2]);
-        doc.text(title, margin + 4, y + 7);
-        y += 14;
-    }
+    // === HEADER ===
+    // Barra superior amber
+    setFill(colors.primary); doc.rect(0, 0, W, 3, 'F');
+    y = 3;
 
-    // Header
-    doc.setFillColor(20, 20, 30);
-    doc.rect(0, 0, pageWidth, 35, 'F');
-    doc.setFontSize(16);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(255, 191, 0);
-    doc.text('ANALISE MACRO', margin, 15);
-    doc.setFontSize(10);
-    doc.setTextColor(180, 180, 200);
-    doc.text(data.clientName, margin, 23);
-    doc.text(formatDateBR(data.period.since) + ' a ' + formatDateBR(data.period.until), margin, 29);
-    y = 42;
+    // Titulo
+    y += 10;
+    doc.setFontSize(18); doc.setFont('helvetica', 'bold'); setColor(colors.dark);
+    doc.text('Analise Macro', M, y);
+    y += 5;
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal'); setColor(colors.textLight);
+    doc.text('Resumo de atividade da conta — Meta Ads', M, y);
+    y += 8;
 
-    // Secao 1: Visao Geral
-    drawSectionTitle('VISAO GERAL DA CONTA', [255, 191, 0]);
-    var curr = analysis.overview.current;
-    var ch = analysis.overview.changes;
+    // Info cards: Cliente + Periodo
+    var cardW = 82, cardH = 14, gap = 6;
+    setFill(colors.bgLight);
+    doc.roundedRect(M, y, cardW, cardH, 2, 2, 'F');
+    doc.roundedRect(M + cardW + gap, y, cardW, cardH, 2, 2, 'F');
+    doc.setFontSize(7); setColor(colors.textLight);
+    doc.text('CLIENTE', M + 4, y + 5);
+    doc.text('PERIODO', M + cardW + gap + 4, y + 5);
+    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); setColor(colors.dark);
+    doc.text(data.clientName.substring(0, 35), M + 4, y + 11);
+    doc.text(formatDateBR(data.period.since) + ' a ' + formatDateBR(data.period.until), M + cardW + gap + 4, y + 11);
+    y += cardH + 5;
 
+    // Separador
+    setDraw(colors.border); doc.setLineWidth(0.3); doc.line(M, y, M + CW, y);
+    y += 6;
+
+    // === SECAO 1: KPIs ===
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); setColor(colors.primary);
+    doc.text('Visao Geral da Conta', M, y); y += 6;
+
+    var cur = a.overview.current, ch = a.overview.changes;
     var kpis = [
-        { label: 'Investimento', value: fmtCur(curr.spend), change: fmtPct(ch.spend) },
-        { label: 'Impressoes', value: fmtNum(curr.impressions), change: fmtPct(ch.impressions) },
-        { label: 'Resultados', value: fmtNum(curr.leads), change: fmtPct(ch.leads) },
-        { label: 'Custo/Resultado', value: curr.cpl > 0 ? fmtCur(curr.cpl) : '--', change: fmtPct(ch.cpl) }
+        { label: 'INVESTIMENTO', value: fmtCur(cur.spend), change: ch.spend },
+        { label: 'IMPRESSOES', value: fmtNum(cur.impressions), change: ch.impressions },
+        { label: 'RESULTADOS', value: fmtNum(cur.leads), change: ch.leads },
+        { label: 'CUSTO/RESULTADO', value: cur.cpl > 0 ? fmtCur(cur.cpl) : '--', change: ch.cpl, invert: true }
     ];
-    var kpiWidth = contentWidth / 4;
+    var kW = 40, kH = 28, kGap = 3.3;
     kpis.forEach(function(kpi, i) {
-        var x = margin + i * kpiWidth;
-        doc.setFillColor(25, 25, 35);
-        doc.roundedRect(x + 1, y, kpiWidth - 2, 18, 2, 2, 'F');
-        doc.setFontSize(7);
-        doc.setTextColor(120, 120, 140);
-        doc.text(kpi.label.toUpperCase(), x + 4, y + 6);
-        doc.setFontSize(11);
-        doc.setTextColor(255, 255, 255);
-        doc.text(kpi.value, x + 4, y + 13);
-        doc.setFontSize(7);
-        var chVal = parseFloat(kpi.change);
-        doc.setTextColor(chVal > 0 ? 74 : (chVal < 0 ? 248 : 150), chVal > 0 ? 222 : (chVal < 0 ? 113 : 150), chVal > 0 ? 128 : (chVal < 0 ? 113 : 160));
-        doc.text(kpi.change + ' vs anterior', x + 4, y + 17);
+        var x = M + i * (kW + kGap);
+        setFill(colors.bgLight); doc.roundedRect(x, y, kW, kH, 2, 2, 'F');
+        // Barra lateral
+        setFill(colors.primary); doc.roundedRect(x + 1.5, y + 2, 1.2, kH - 4, 0.5, 0.5, 'F');
+        // Label
+        doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); setColor(colors.textLight);
+        doc.text(kpi.label, x + 5, y + 7);
+        // Valor
+        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); setColor(colors.dark);
+        doc.text(kpi.value, x + 5, y + 15);
+        // Variacao
+        var isGood = kpi.invert ? kpi.change < 0 : kpi.change > 0;
+        var isBad = kpi.invert ? kpi.change > 0 : kpi.change < 0;
+        setColor(isGood ? colors.green : (isBad ? colors.red : colors.textLight));
+        doc.setFontSize(7); doc.setFont('helvetica', 'bold');
+        doc.text(fmtPct(kpi.change) + ' vs anterior', x + 5, y + 21);
     });
-    y += 24;
+    y += kH + 6;
 
-    // Secao 2: Timeline
-    if (analysis.timeline.length > 0) {
-        drawSectionTitle('TIMELINE DE MUDANCAS', [255, 191, 0]);
-        analysis.timeline.forEach(function(event) {
-            checkPage(8);
-            doc.setFontSize(8);
-            doc.setTextColor(120, 120, 140);
-            doc.text(formatDateBR(event.date), margin + 2, y + 5);
-            doc.setTextColor(220, 220, 230);
-            doc.text(event.text, margin + 25, y + 5);
-            y += 7;
+    // Campanhas ativas
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal'); setColor(colors.textLight);
+    doc.text(cur.activeCampaigns + ' campanhas com veiculacao no periodo' + (ch.campaigns !== 0 ? ' (' + (ch.campaigns > 0 ? '+' : '') + ch.campaigns + ' vs anterior)' : ''), M, y);
+    y += 8;
+
+    // === SECAO 2: TIMELINE ===
+    if (a.timeline.length > 0) {
+        checkPage(20);
+        setDraw(colors.border); doc.setLineWidth(0.15); doc.line(M, y, M + CW, y); y += 5;
+        doc.setFontSize(11); doc.setFont('helvetica', 'bold'); setColor(colors.primary);
+        doc.text('Timeline de Mudancas', M, y); y += 6;
+
+        a.timeline.forEach(function(e) {
+            checkPage(14);
+            setFill(colors.bgLight); doc.roundedRect(M, y, CW, 10, 1, 1, 'F');
+            // Indicador colorido
+            var eColor = e.color === 'emerald' ? colors.green : (e.color === 'red' ? colors.red : (e.color === 'blue' ? colors.blue : colors.primary));
+            setFill(eColor); doc.roundedRect(M + 1.5, y + 2, 1.2, 6, 0.5, 0.5, 'F');
+            // Data
+            doc.setFontSize(7); doc.setFont('helvetica', 'bold'); setColor(colors.textLight);
+            doc.text(formatDateBR(e.date), M + 5, y + 4.5);
+            // Texto
+            doc.setFont('helvetica', 'normal'); setColor(colors.dark);
+            var evText = e.text.length > 85 ? e.text.substring(0, 82) + '...' : e.text;
+            doc.text(evText, M + 22, y + 4.5);
+            // Detalhe
+            if (e.detail) {
+                doc.setFontSize(6); setColor(colors.textLight);
+                doc.text(e.detail.substring(0, 90), M + 22, y + 8.5);
+            }
+            y += 12;
         });
-        y += 4;
+        y += 3;
     }
 
-    // Secao 3: Performance por Campanha
-    drawSectionTitle('PERFORMANCE POR CAMPANHA', [255, 191, 0]);
-    // Table header
-    doc.setFontSize(7);
-    doc.setTextColor(120, 120, 140);
-    doc.text('Campanha', margin + 2, y + 4);
-    doc.text('Invest.', margin + 80, y + 4);
-    doc.text('Result.', margin + 105, y + 4);
-    doc.text('Custo/Res.', margin + 125, y + 4);
-    doc.text('Status', margin + 155, y + 4);
-    y += 7;
-    doc.setDrawColor(50, 50, 60);
-    doc.line(margin, y, margin + contentWidth, y);
-    y += 2;
+    // === SECAO 3: PERFORMANCE ===
+    checkPage(25);
+    setDraw(colors.border); doc.setLineWidth(0.15); doc.line(M, y, M + CW, y); y += 5;
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); setColor(colors.primary);
+    doc.text('Performance por Campanha', M, y); y += 6;
 
-    analysis.campaignPerformance.forEach(function(c) {
-        checkPage(7);
-        doc.setFontSize(7);
-        doc.setTextColor(220, 220, 230);
-        var name = c.name.length > 40 ? c.name.substring(0, 37) + '...' : c.name;
-        doc.text(name, margin + 2, y + 4);
-        doc.text(fmtCur(c.current.spend), margin + 80, y + 4);
-        doc.text(fmtNum(c.current.result), margin + 105, y + 4);
-        doc.text(c.current.costPerResult > 0 ? fmtCur(c.current.costPerResult) : '--', margin + 125, y + 4);
+    // Header da tabela
+    setFill(colors.primary); doc.roundedRect(M, y, CW, 7, 1, 1, 'F');
+    doc.setFontSize(7); doc.setFont('helvetica', 'bold'); setColor(colors.white);
+    doc.text('Campanha', M + 3, y + 5);
+    doc.text('Tipo', M + 75, y + 5);
+    doc.text('Invest.', M + 100, y + 5);
+    doc.text('Resultado', M + 120, y + 5);
+    doc.text('Custo/Res.', M + 142, y + 5);
+    doc.text('Status', M + 164, y + 5);
+    y += 9;
+
+    a.campaignPerformance.forEach(function(c, i) {
+        checkPage(8);
+        if (i % 2 === 0) { setFill(colors.bgLight); doc.rect(M, y - 1, CW, 7, 'F'); }
+        doc.setFontSize(7); doc.setFont('helvetica', 'normal'); setColor(colors.dark);
+        var nm = c.name.length > 35 ? c.name.substring(0, 32) + '...' : c.name;
+        doc.text(nm, M + 3, y + 4);
+        setColor(colors.textLight);
+        doc.text(c.objectiveLabel, M + 75, y + 4);
+        setColor(colors.dark);
+        doc.text(fmtCur(c.current.spend), M + 100, y + 4);
+        doc.text(fmtNum(c.current.result) + ' ' + c.metricLabel, M + 120, y + 4);
+        doc.text(c.current.costPerResult > 0 && c.current.costPerResult !== Infinity ? fmtCur(c.current.costPerResult) : '--', M + 142, y + 4);
         var vc = getVerdictConfig(c.verdict);
-        doc.setTextColor(c.verdict === 'melhorando' || c.verdict === 'escalando_bem' || c.verdict === 'nova' ? 74 : (c.verdict === 'piorando' || c.verdict === 'escalando_mal' || c.verdict === 'pausada' ? 248 : 150),
-                         c.verdict === 'melhorando' || c.verdict === 'escalando_bem' || c.verdict === 'nova' ? 222 : (c.verdict === 'piorando' || c.verdict === 'escalando_mal' || c.verdict === 'pausada' ? 113 : 150),
-                         c.verdict === 'melhorando' || c.verdict === 'escalando_bem' || c.verdict === 'nova' ? 128 : (c.verdict === 'piorando' || c.verdict === 'escalando_mal' || c.verdict === 'pausada' ? 113 : 160));
-        doc.text(vc.label, margin + 155, y + 4);
-        y += 6;
+        var vColor = (c.verdict === 'melhorando' || c.verdict === 'escalando_bem' || c.verdict === 'nova') ? colors.green : ((c.verdict === 'piorando' || c.verdict === 'escalando_mal' || c.verdict === 'pausada' || c.verdict === 'sem_resultado') ? colors.red : colors.textLight);
+        setColor(vColor); doc.setFont('helvetica', 'bold');
+        doc.text(vc.label, M + 164, y + 4);
+        y += 7;
     });
     y += 4;
 
-    // Secao 6: Diagnostico
-    drawSectionTitle('DIAGNOSTICO E RECOMENDACOES', [255, 191, 0]);
-    analysis.diagnostic.forEach(function(item) {
-        checkPage(12);
-        doc.setFillColor(25, 25, 35);
-        doc.roundedRect(margin, y, contentWidth, 8, 1, 1, 'F');
-        doc.setFontSize(8);
-        doc.setTextColor(220, 220, 230);
-        var text = item.text.length > 100 ? item.text.substring(0, 97) + '...' : item.text;
-        doc.text(text, margin + 4, y + 5.5);
-        y += 10;
+    // === SECAO 6: DIAGNOSTICO ===
+    checkPage(20);
+    setDraw(colors.border); doc.setLineWidth(0.15); doc.line(M, y, M + CW, y); y += 5;
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); setColor(colors.primary);
+    doc.text('Diagnostico e Recomendacoes', M, y); y += 6;
+
+    a.diagnostic.forEach(function(item) {
+        var lines = doc.splitTextToSize(item.text, CW - 10);
+        var blockH = 4 + lines.length * 3.5;
+        checkPage(blockH + 3);
+        setFill(colors.bgLight); doc.roundedRect(M, y, CW, blockH, 1, 1, 'F');
+        var iColor = item.type === 'success' ? colors.green : (item.type === 'danger' ? colors.red : (item.type === 'warning' ? colors.primary : colors.blue));
+        setFill(iColor); doc.roundedRect(M + 1.5, y + 2, 1.2, blockH - 4, 0.5, 0.5, 'F');
+        doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); setColor(colors.dark);
+        doc.text(lines, M + 5, y + 5);
+        y += blockH + 2;
     });
 
     // Footer
-    y += 6;
-    doc.setFontSize(7);
-    doc.setTextColor(100, 100, 120);
-    doc.text('Gerado automaticamente por MILO Dashboard | ' + new Date().toLocaleDateString('pt-BR'), margin, y);
+    addFooter();
 
     // Salvar
-    var presetLabels = {
-        'last_7d': 'ULTIMOS 7 DIAS', 'last_14d': 'ULTIMOS 14 DIAS',
-        'last_28d': 'ULTIMOS 28 DIAS', 'last_30d': 'ULTIMOS 30 DIAS',
-        'this_week': 'ESTA SEMANA', 'last_week': 'SEMANA PASSADA',
-        'this_month': 'ESTE MES', 'last_month': 'MES PASSADO'
-    };
+    var presetLabels = { 'last_7d': 'ULTIMOS 7 DIAS', 'last_14d': 'ULTIMOS 14 DIAS', 'last_28d': 'ULTIMOS 28 DIAS', 'last_30d': 'ULTIMOS 30 DIAS', 'this_week': 'ESTA SEMANA', 'last_week': 'SEMANA PASSADA', 'this_month': 'ESTE MES', 'last_month': 'MES PASSADO' };
     var periodLabel = presetLabels[data.period.preset] || data.period.label;
-    var clientName = data.clientName.toUpperCase();
-    doc.save('[MILO][' + clientName + '][ANALISE MACRO][' + periodLabel + '].pdf');
+    doc.save('[MILO][' + data.clientName.toUpperCase() + '][ANALISE MACRO][' + periodLabel + '].pdf');
 }
