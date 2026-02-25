@@ -203,80 +203,75 @@
 
     <!-- Header Metricas (oculto por padrao) -->
     <header id="headerMetricas" class="hidden sticky top-0 z-30 bg-background-dark/95 backdrop-blur-md border-b border-border-dark">
-        <div class="max-w-7xl mx-auto">
-            <!-- Linha 1: Menu + Titulo + Acoes Principais -->
-            <div class="flex items-center justify-between gap-4 px-4 sm:px-6 py-3 sm:py-4">
-                <div class="flex items-center gap-3">
-                    <!-- Menu toggle para mobile -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
+            <div class="flex items-center justify-between gap-3">
+                <!-- Esquerda: Menu + Titulo -->
+                <div class="flex items-center gap-3 min-w-0">
                     <button class="menu-toggle lg:hidden p-2 -ml-2 text-slate-400 hover:text-white transition-colors" onclick="toggleSidebar()">
                         <span class="material-symbols-outlined text-2xl">menu</span>
                     </button>
-                    <!-- Titulo e Contexto -->
                     <div class="min-w-0">
                         <h1 class="text-base sm:text-xl font-bold text-white truncate">Metricas</h1>
                         <p id="selectedClientName" class="text-[11px] sm:text-xs text-slate-500 truncate">Selecione um cliente</p>
                     </div>
                 </div>
-                <!-- Acoes Principais -->
-                <div class="flex items-center gap-2 shrink-0">
-                    <button onclick="openDateFilterModal()" class="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2 bg-surface-dark border border-border-dark rounded-lg text-xs sm:text-sm font-medium hover:bg-slate-800 transition-colors">
-                        <span class="material-symbols-outlined text-base sm:text-lg">calendar_today</span>
-                        <span id="dateFilterLabel" class="hidden md:inline">Ultimos 7 dias</span>
-                        <span id="dateFilterLabelMobile" class="md:hidden">7 dias</span>
-                        <span class="material-symbols-outlined text-base text-slate-500">expand_more</span>
-                    </button>
-                    <button class="p-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors" title="Atualizar dados">
-                        <span class="material-symbols-outlined text-xl">refresh</span>
-                    </button>
-                    <button id="sendReportBtn" onclick="sendManualReport()" class="hidden p-2 text-slate-500 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Enviar relatorio para Google Chat">
-                        <span class="material-symbols-outlined text-xl">send</span>
-                    </button>
-                </div>
-            </div>
 
-            <!-- Linha 2: Filtros - Scrollavel horizontalmente em mobile -->
-            <div class="border-t border-border-dark/50 px-4 sm:px-6 py-2.5 sm:py-3 relative">
-                <!-- Indicador de scroll a direita (mobile) -->
-                <div class="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background-dark to-transparent pointer-events-none z-10 sm:hidden"></div>
-                <div class="flex items-center gap-2 overflow-x-auto hide-scrollbar pb-1 pr-4 sm:pr-0">
-                    <!-- Label dos filtros -->
-                    <span class="text-xs text-slate-500 font-medium shrink-0 hidden sm:inline">Filtros:</span>
+                <!-- Direita: Filtros + Acoes -->
+                <div class="flex items-center gap-1.5 sm:gap-2 overflow-x-auto hide-scrollbar">
+                    <!-- Filtros agrupados -->
+                    <div class="flex items-center gap-1.5 bg-surface-dark/50 border border-border-dark/50 rounded-xl p-1 shrink-0">
+                        <!-- Cliente -->
+                        <div class="relative">
+                            <span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-sm">person</span>
+                            <select id="clientFilter" onchange="onClientFilterChange()" class="bg-transparent border-0 text-slate-300 rounded-lg py-1.5 pl-7 pr-6 text-xs appearance-none focus:ring-1 focus:ring-primary hover:bg-surface-dark transition-colors cursor-pointer max-w-[130px] sm:max-w-[170px]">
+                                <option value="">Cliente</option>
+                            </select>
+                            <span class="material-symbols-outlined absolute right-1 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none text-xs">expand_more</span>
+                        </div>
 
-                    <!-- Filtro Cliente -->
-                    <div class="relative shrink-0">
-                        <select id="clientFilter" onchange="onClientFilterChange()" class="bg-surface-dark border border-border-dark text-slate-300 rounded-full py-1.5 sm:py-2 pl-3 pr-8 text-xs sm:text-sm appearance-none focus:ring-primary focus:border-primary hover:border-slate-600 transition-colors cursor-pointer">
-                            <option value="">Selecione um Cliente</option>
-                        </select>
-                        <span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-base">expand_more</span>
+                        <div class="w-px h-5 bg-border-dark/60"></div>
+
+                        <!-- Campanha -->
+                        <div class="relative hidden sm:block">
+                            <span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-sm">campaign</span>
+                            <select id="campaignFilter" onchange="onCampaignFilterChange()" class="bg-transparent border-0 text-slate-300 rounded-lg py-1.5 pl-7 pr-6 text-xs appearance-none focus:ring-1 focus:ring-primary hover:bg-surface-dark transition-colors cursor-pointer max-w-[150px] disabled:opacity-30" disabled>
+                                <option value="">Campanhas</option>
+                            </select>
+                            <span class="material-symbols-outlined absolute right-1 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none text-xs">expand_more</span>
+                        </div>
+
+                        <div class="w-px h-5 bg-border-dark/60 hidden lg:block"></div>
+
+                        <!-- Conjunto -->
+                        <div class="relative hidden lg:block">
+                            <span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-sm">account_tree</span>
+                            <select id="adsetFilter" onchange="onAdsetFilterChange()" class="bg-transparent border-0 text-slate-300 rounded-lg py-1.5 pl-7 pr-6 text-xs appearance-none focus:ring-1 focus:ring-primary hover:bg-surface-dark transition-colors cursor-pointer max-w-[150px] disabled:opacity-30" disabled>
+                                <option value="">Conjuntos</option>
+                            </select>
+                            <span class="material-symbols-outlined absolute right-1 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none text-xs">expand_more</span>
+                        </div>
                     </div>
 
-                    <!-- Separador visual -->
-                    <span class="text-border-dark hidden sm:inline">/</span>
-
-                    <!-- Filtro Campanha -->
-                    <div class="relative shrink-0">
-                        <select id="campaignFilter" onchange="onCampaignFilterChange()" class="bg-surface-dark border border-border-dark text-slate-300 rounded-full py-1.5 sm:py-2 pl-3 pr-8 text-xs sm:text-sm appearance-none focus:ring-primary focus:border-primary hover:border-slate-600 transition-colors cursor-pointer" disabled>
-                            <option value="">Todas as Campanhas</option>
-                        </select>
-                        <span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-base">expand_more</span>
-                    </div>
-
-                    <!-- Separador visual -->
-                    <span class="text-border-dark hidden sm:inline">/</span>
-
-                    <!-- Filtro Conjunto de Anuncios -->
-                    <div class="relative shrink-0">
-                        <select id="adsetFilter" onchange="onAdsetFilterChange()" class="bg-surface-dark border border-border-dark text-slate-300 rounded-full py-1.5 sm:py-2 pl-3 pr-8 text-xs sm:text-sm appearance-none focus:ring-primary focus:border-primary hover:border-slate-600 transition-colors cursor-pointer" disabled>
-                            <option value="">Todos os Conjuntos</option>
-                        </select>
-                        <span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-base">expand_more</span>
-                    </div>
-
-                    <!-- Botao limpar filtros -->
-                    <button onclick="clearAllFilters()" class="shrink-0 flex items-center gap-1 px-2.5 py-1.5 sm:py-2 text-xs text-slate-400 hover:text-white hover:bg-surface-dark rounded-full transition-colors" title="Limpar filtros">
-                        <span class="material-symbols-outlined text-sm">filter_alt_off</span>
-                        <span class="hidden sm:inline">Limpar</span>
+                    <!-- Periodo -->
+                    <button onclick="openDateFilterModal()" class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-surface-dark border border-border-dark rounded-lg text-xs font-medium hover:border-slate-600 transition-colors shrink-0">
+                        <span class="material-symbols-outlined text-sm text-primary">calendar_today</span>
+                        <span id="dateFilterLabel" class="hidden md:inline text-slate-300">Ultimos 7 dias</span>
+                        <span id="dateFilterLabelMobile" class="md:hidden text-slate-300">7d</span>
+                        <span class="material-symbols-outlined text-xs text-slate-500">expand_more</span>
                     </button>
+
+                    <!-- Acoes -->
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button onclick="clearAllFilters()" class="p-1.5 text-slate-500 hover:text-white hover:bg-surface-dark rounded-lg transition-colors" title="Limpar filtros">
+                            <span class="material-symbols-outlined text-lg">filter_alt_off</span>
+                        </button>
+                        <button class="p-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors" title="Atualizar dados">
+                            <span class="material-symbols-outlined text-lg">refresh</span>
+                        </button>
+                        <button id="sendReportBtn" onclick="sendManualReport()" class="hidden p-1.5 text-slate-500 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Enviar relatorio para Google Chat">
+                            <span class="material-symbols-outlined text-lg">send</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
