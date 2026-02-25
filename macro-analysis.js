@@ -528,7 +528,11 @@ function buildDiagnostic(overview, perf, lifecycle, creatives, currentMap, prevM
 // FORMATACAO
 // ==========================================
 
-function fmtCur(v) { return 'R$ ' + v.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+function fmtCur(v) {
+    var cur = (typeof currentCurrency !== 'undefined') ? currentCurrency : 'BRL';
+    var locale = cur === 'BRL' ? 'pt-BR' : 'en-US';
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: cur, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+}
 function fmtNum(v) { return Math.round(v).toLocaleString('pt-BR'); }
 function fmtPct(v) { return (v > 0 ? '+' : '') + Math.round(v) + '%'; }
 

@@ -55,11 +55,14 @@ exports.handler = async (event, context) => {
                 try {
                     const { since, until, label } = getPeriodDates(schedule.period || 'yesterday');
                     const prev = getPreviousPeriodDates(schedule.period || 'yesterday', since, until);
-                    const [data, previousData] = await Promise.all([
+                    const wAccountId = client.adAccountId.startsWith('act_') ? client.adAccountId : `act_${client.adAccountId}`;
+                    const [data, previousData, currData] = await Promise.all([
                         fetchInsightsData(client.adAccountId, since, until, accessToken),
-                        fetchInsightsData(client.adAccountId, prev.since, prev.until, accessToken)
+                        fetchInsightsData(client.adAccountId, prev.since, prev.until, accessToken),
+                        fetch(`${META_API_BASE}/${wAccountId}?fields=currency&access_token=${accessToken}`).then(r => r.json()).catch(() => ({}))
                     ]);
-                    const card = buildGoogleChatCard(client.name, data, previousData, label, schedule.period, client.id, schedule.includePdfLink, client.cplTargets);
+                    const currency = currData.currency || 'BRL';
+                    const card = buildGoogleChatCard(client.name, data, previousData, label, schedule.period, client.id, schedule.includePdfLink, client.cplTargets, currency);
 
                     await sendToGoogleChat(client.googleChatWebhook, card);
                     sentCount++;
@@ -386,11 +389,13 @@ function countLeadsFromActions(actions, conversionType) {
 // ==========================================
 // CONSTRUIR CARD DO GOOGLE CHAT (v2)
 // ==========================================
-function buildGoogleChatCard(clientName, data, previousData, periodLabel, periodType, clientId, includePdfLink, cplTargets) {
+function buildGoogleChatCard(clientName, data, previousData, periodLabel, periodType, clientId, includePdfLink, cplTargets, currency) {
     const { summary, campaigns } = data;
     const prev = previousData ? previousData.summary : null;
+    const cur = currency || 'BRL';
+    const locale = cur === 'BRL' ? 'pt-BR' : 'en-US';
 
-    const fmtCurrency = (v) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const fmtCurrency = (v) => new Intl.NumberFormat(locale, { style: 'currency', currency: cur, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
     const fmtNumber = (v) => v.toLocaleString('pt-BR');
 
     const periodNames = {

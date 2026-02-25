@@ -455,7 +455,14 @@ function generateInsights(data) {
 
 // Auxiliares de formatacao para insights
 function fmtCur(value) {
-    return 'R$ ' + Number(value).toFixed(2).replace('.', ',');
+    var cur = (typeof currentCurrency !== 'undefined') ? currentCurrency : 'BRL';
+    var locale = cur === 'BRL' ? 'pt-BR' : 'en-US';
+    return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: cur,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(Number(value));
 }
 
 function fmtVar(change) {
@@ -1499,9 +1506,10 @@ function drawPDFFooter(doc, pageNum, totalPages, colors) {
 // ==========================================
 
 function formatAxisCurrency(value) {
-    if (value >= 1000) return 'R$' + (value / 1000).toFixed(1) + 'k';
-    if (value >= 1) return 'R$' + value.toFixed(0);
-    return 'R$' + value.toFixed(2);
+    var symbol = (typeof currentCurrency !== 'undefined' && currentCurrency === 'USD') ? '$' : 'R$';
+    if (value >= 1000) return symbol + (value / 1000).toFixed(1) + 'k';
+    if (value >= 1) return symbol + value.toFixed(0);
+    return symbol + value.toFixed(2);
 }
 
 function truncateText(doc, text, maxWidth) {

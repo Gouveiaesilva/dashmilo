@@ -130,6 +130,14 @@ exports.handler = async (event, context) => {
             default:
                 // Buscar insights (comportamento padrão)
                 result = await fetchInsights(formattedAccountId, accessToken, params);
+                // Buscar currency da conta para formatação no frontend
+                try {
+                    const currResp = await fetch(`${META_API_BASE}/${formattedAccountId}?fields=currency&access_token=${accessToken}`);
+                    const currData = await currResp.json();
+                    result.currency = currData.currency || 'BRL';
+                } catch (e) {
+                    result.currency = 'BRL';
+                }
                 break;
         }
 

@@ -187,6 +187,7 @@ function handleLogout() {
 function resetFullDashboardState() {
     // Resetar variáveis globais
     currentAdAccountId = null;
+    currentCurrency = 'BRL';
     currentDashboardData = null;
     cachedCampaigns = [];
     cachedAdsets = [];
@@ -794,9 +795,10 @@ function updateCplPreview() {
 
     if (!isNaN(excellent) && !isNaN(healthy) && !isNaN(warning) && excellent > 0) {
         preview.classList.remove('hidden');
-        document.getElementById('cplPreviewExcellent').textContent = `R$${excellent}`;
-        document.getElementById('cplPreviewHealthy').textContent = `R$${healthy}`;
-        document.getElementById('cplPreviewWarning').textContent = `R$${warning}`;
+        var sym = currentCurrency === 'BRL' ? 'R$' : '$';
+        document.getElementById('cplPreviewExcellent').textContent = `${sym}${excellent}`;
+        document.getElementById('cplPreviewHealthy').textContent = `${sym}${healthy}`;
+        document.getElementById('cplPreviewWarning').textContent = `${sym}${warning}`;
     } else {
         preview.classList.add('hidden');
     }
@@ -1073,6 +1075,7 @@ function showToast(message, type) {
 let cachedCampaigns = [];
 let cachedAdsets = [];
 let currentAdAccountId = null;
+let currentCurrency = 'BRL';
 
 // Popular o select de clientes no header
 async function populateClientFilter() {
@@ -1519,8 +1522,13 @@ async function fetchClientData(adAccountId, campaignId = null, adsetId = null) {
 
         console.log('Dados recebidos:', result);
 
-        // Armazenar dados
+        // Armazenar currency e dados
+        currentCurrency = result.currency || 'BRL';
         currentDashboardData = result.data;
+
+        // Atualizar símbolos de moeda na UI
+        var currSymbol = currentCurrency === 'BRL' ? 'R$' : '$';
+        document.querySelectorAll('.cpl-currency-symbol').forEach(function(el) { el.textContent = currSymbol; });
 
         // Atualizar dashboard
         updateDashboard(result.data);
@@ -1603,11 +1611,13 @@ function updateMetricCard(metric, value, trend, formatter, invertTrend = false) 
     }
 }
 
-// Formatar moeda
-function formatCurrency(value) {
-    return new Intl.NumberFormat('pt-BR', {
+// Formatar moeda (usa currentCurrency ou currency explícita)
+function formatCurrency(value, currency) {
+    var cur = currency || currentCurrency || 'BRL';
+    var locale = cur === 'BRL' ? 'pt-BR' : 'en-US';
+    return new Intl.NumberFormat(locale, {
         style: 'currency',
-        currency: 'BRL'
+        currency: cur
     }).format(value);
 }
 
@@ -1885,8 +1895,9 @@ function pickEvenIndices(total, count) {
 
 // Formatadores compactos para eixo Y
 function formatAxisCurrency(value) {
-    if (value >= 1000) return 'R$' + (value / 1000).toFixed(value % 1000 === 0 ? 0 : 1) + 'k';
-    return 'R$' + formatAxisNumber(value);
+    var symbol = currentCurrency === 'BRL' ? 'R$' : '$';
+    if (value >= 1000) return symbol + (value / 1000).toFixed(value % 1000 === 0 ? 0 : 1) + 'k';
+    return symbol + formatAxisNumber(value);
 }
 
 function formatAxisNumber(value) {
@@ -1984,14 +1995,14 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Acumuladores para KPIs da visao geral
-var overviewMetricsAccum = { totalSpend: 0, totalLeads: 0 };
+var overviewMetricsAccum = { totalSpend: 0, totalLeads: 0, currencies: [] };
 
 async function loadOverviewData() {
     const rowsContainer = document.getElementById('overviewBoardRows');
     const loading = document.getElementById('overviewLoading');
 
     // Reset acumuladores
-    overviewMetricsAccum = { totalSpend: 0, totalLeads: 0 };
+    overviewMetricsAccum = { totalSpend: 0, totalLeads: 0, currencies: [] };
 
     // Limpar rows e cards existentes, resetar ordenacao
     rowsContainer.querySelectorAll('.overview-board-row').forEach(r => r.remove());
@@ -2081,7 +2092,10 @@ async function loadOverviewData() {
                     if (metrics && metrics.spend > 0) {
                         overviewMetricsAccum.totalSpend += metrics.spend;
                         overviewMetricsAccum.totalLeads += (metrics.leads || 0);
-
+                        var metricsCur = metrics._currency || 'BRL';
+                        if (!overviewMetricsAccum.currencies.includes(metricsCur)) {
+                            overviewMetricsAccum.currencies.push(metricsCur);
+                        }
                     }
                     updateOverviewKPIs(overviewMetricsAccum);
                 })
@@ -2131,7 +2145,9 @@ async function fetchOverviewInsights(adAccountId, baseUrl) {
         return null;
     }
 
-    return result.data.summary;
+    var summary = result.data.summary;
+    summary._currency = result.currency || 'BRL';
+    return summary;
 }
 
 function updateRowMetrics(clientId, metrics) {
@@ -2155,7 +2171,8 @@ function updateRowMetrics(clientId, metrics) {
         return;
     }
 
-    if (spendEl) spendEl.innerHTML = `<span class="text-sm font-bold text-white">${formatCurrency(metrics.spend)}</span>`;
+    var rowCurrency = metrics._currency || 'BRL';
+    if (spendEl) spendEl.innerHTML = `<span class="text-sm font-bold text-white">${formatCurrency(metrics.spend, rowCurrency)}</span>`;
     if (leadsEl) leadsEl.innerHTML = `<span class="text-sm font-bold text-white">${formatNumber(metrics.leads)}</span>`;
 
     if (cplEl) {
@@ -2168,14 +2185,14 @@ function updateRowMetrics(clientId, metrics) {
             if (classification) {
                 cplEl.innerHTML = `
                     <div class="flex flex-col items-end gap-0.5">
-                        <span class="text-sm font-bold text-${classification.color}-400">${formatCurrency(metrics.cpl)}</span>
+                        <span class="text-sm font-bold text-${classification.color}-400">${formatCurrency(metrics.cpl, rowCurrency)}</span>
                         <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-${classification.color}-500/10 text-${classification.color}-400">
                             <span class="material-symbols-outlined" style="font-size:10px">${classification.icon}</span>
                             ${classification.label}
                         </span>
                     </div>`;
             } else {
-                cplEl.innerHTML = `<span class="text-sm font-bold text-white">${formatCurrency(metrics.cpl)}</span>`;
+                cplEl.innerHTML = `<span class="text-sm font-bold text-white">${formatCurrency(metrics.cpl, rowCurrency)}</span>`;
             }
         }
     }
@@ -2527,8 +2544,9 @@ function updateCardMetrics(clientId, metrics) {
         return;
     }
 
+    var cardCurrency = metrics._currency || 'BRL';
     if (cardSpend) {
-        cardSpend.innerHTML = `<p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Investido</p><p class="text-sm font-bold text-white">${formatCurrency(metrics.spend)}</p>`;
+        cardSpend.innerHTML = `<p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Investido</p><p class="text-sm font-bold text-white">${formatCurrency(metrics.spend, cardCurrency)}</p>`;
     }
     if (cardLeads) {
         cardLeads.innerHTML = `<p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">Leads</p><p class="text-sm font-bold text-white">${formatNumber(metrics.leads)}</p>`;
@@ -2542,13 +2560,13 @@ function updateCardMetrics(clientId, metrics) {
             if (classification) {
                 cardCpl.innerHTML = `
                     <p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">CPL</p>
-                    <p class="text-sm font-bold text-${classification.color}-400">${formatCurrency(metrics.cpl)}</p>
+                    <p class="text-sm font-bold text-${classification.color}-400">${formatCurrency(metrics.cpl, cardCurrency)}</p>
                     <span class="inline-flex items-center gap-0.5 px-1 py-px rounded text-[8px] font-bold bg-${classification.color}-500/10 text-${classification.color}-400 mt-0.5">
                         <span class="material-symbols-outlined" style="font-size:9px">${classification.icon}</span>
                         ${classification.label}
                     </span>`;
             } else {
-                cardCpl.innerHTML = `<p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">CPL</p><p class="text-sm font-bold text-white">${formatCurrency(metrics.cpl)}</p>`;
+                cardCpl.innerHTML = `<p class="text-[9px] text-slate-500 uppercase tracking-wider mb-1">CPL</p><p class="text-sm font-bold text-white">${formatCurrency(metrics.cpl, cardCurrency)}</p>`;
             }
         }
     }
@@ -2576,11 +2594,13 @@ function updateOverviewKPIs(accum) {
         return;
     }
 
-    if (spendEl) spendEl.textContent = formatCurrency(accum.totalSpend);
+    // Se todas as contas usam a mesma moeda, formatar com ela; senão, usar BRL como default
+    var overviewCur = (accum.currencies && accum.currencies.length === 1) ? accum.currencies[0] : 'BRL';
+    if (spendEl) spendEl.textContent = formatCurrency(accum.totalSpend, overviewCur);
     if (leadsEl) leadsEl.textContent = formatNumber(accum.totalLeads);
     if (cplEl) {
         if (accum.totalLeads > 0) {
-            cplEl.textContent = formatCurrency(accum.totalSpend / accum.totalLeads);
+            cplEl.textContent = formatCurrency(accum.totalSpend / accum.totalLeads, overviewCur);
         } else {
             cplEl.textContent = accum.totalSpend > 0 ? '--' : '--';
         }
@@ -3359,7 +3379,7 @@ function runAnalysisEngine(campaigns, cplTargets) {
         result.scenario.push({
             icon: 'speed',
             title: 'Eficiencia do investimento',
-            text: `CPM (custo por mil impressoes) de ${formatCurrency(costPerImpression)}. Para cada R$ 1,00 investido, foram gerados ${(totalLeads / totalSpend * 100).toFixed(1)} leads por R$ 100. ${avgCtr >= 1.5 ? 'A taxa de cliques esta acima da media do mercado, indicando boa atratividade dos anuncios.' : avgCtr >= 0.7 ? 'A taxa de cliques esta dentro da media aceitavel.' : 'A taxa de cliques esta abaixo do ideal, indicando necessidade de revisar criativos e segmentacao.'}`
+            text: `CPM (custo por mil impressoes) de ${formatCurrency(costPerImpression)}. Para cada ${formatCurrency(1)} investido, foram gerados ${(totalLeads / totalSpend * 100).toFixed(1)} leads por ${formatCurrency(100)}. ${avgCtr >= 1.5 ? 'A taxa de cliques esta acima da media do mercado, indicando boa atratividade dos anuncios.' : avgCtr >= 0.7 ? 'A taxa de cliques esta dentro da media aceitavel.' : 'A taxa de cliques esta abaixo do ideal, indicando necessidade de revisar criativos e segmentacao.'}`
         });
     }
 
@@ -3526,7 +3546,7 @@ function runAnalysisEngine(campaigns, cplTargets) {
     if (fewCreativesCampaigns.length > 0 || lowCtrCampaigns.length > 0) {
         result.strategy.push({
             icon: 'science', title: 'Estrutura de testes A/B',
-            text: `Para otimizar resultados, implemente testes A/B sistematicos: (1) teste uma variavel por vez (copy, imagem, CTA, publico), (2) mantenha orcamento minimo de R$ 20-30/dia por variacao, (3) aguarde pelo menos 3-5 dias ou 1.000 impressoes antes de concluir, (4) desative o perdedor e crie nova variacao contra o vencedor. Priorize testar: ${lowCtrCampaigns.length > 0 ? 'criativos e hooks (CTR baixo)' : 'variacoes de copy e formatos'}.`
+            text: `Para otimizar resultados, implemente testes A/B sistematicos: (1) teste uma variavel por vez (copy, imagem, CTA, publico), (2) mantenha orcamento minimo de ${formatCurrency(20)}-${formatCurrency(30)}/dia por variacao, (3) aguarde pelo menos 3-5 dias ou 1.000 impressoes antes de concluir, (4) desative o perdedor e crie nova variacao contra o vencedor. Priorize testar: ${lowCtrCampaigns.length > 0 ? 'criativos e hooks (CTR baixo)' : 'variacoes de copy e formatos'}.`
         });
     }
 
@@ -3577,7 +3597,7 @@ function runAnalysisEngine(campaigns, cplTargets) {
         const leadsPerReal = totalLeads / totalSpend;
         result.scaling.push({
             icon: 'trending_up', title: 'Visao estrategica de medio prazo',
-            text: `Com a eficiencia atual (${(leadsPerReal * 100).toFixed(1)} leads a cada R$ 100 investidos), um aumento de 30% no orcamento poderia gerar aproximadamente ${Math.round(totalLeads * 1.3)} leads no proximo periodo equivalente (estimativa conservadora, considerando possivel aumento de CPL na escala). Foque em: (1) construir um banco de criativos validados (minimo 10 variacoes), (2) mapear os 3 melhores publicos por campanha, (3) implementar automacao de follow-up (CRM/chatbot) para aumentar a taxa de conversao dos leads gerados.`
+            text: `Com a eficiencia atual (${(leadsPerReal * 100).toFixed(1)} leads a cada ${formatCurrency(100)} investidos), um aumento de 30% no orcamento poderia gerar aproximadamente ${Math.round(totalLeads * 1.3)} leads no proximo periodo equivalente (estimativa conservadora, considerando possivel aumento de CPL na escala). Foque em: (1) construir um banco de criativos validados (minimo 10 variacoes), (2) mapear os 3 melhores publicos por campanha, (3) implementar automacao de follow-up (CRM/chatbot) para aumentar a taxa de conversao dos leads gerados.`
         });
     }
 

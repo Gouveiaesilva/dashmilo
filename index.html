@@ -997,14 +997,14 @@
                             <span class="material-symbols-outlined text-sm transition-transform" id="cplBandsArrow">expand_more</span>
                         </button>
                         <div id="cplBandsSection" class="hidden px-3 pb-3 space-y-2">
-                            <p class="text-[11px] text-slate-500 mb-2">Defina os intervalos de CPL (R$) para cada faixa de desempenho.</p>
+                            <p class="text-[11px] text-slate-500 mb-2">Defina os intervalos de CPL para cada faixa de desempenho.</p>
 
                             <!-- Excelente -->
                             <div class="flex items-center gap-2">
                                 <span class="w-2 h-2 bg-emerald-400 rounded-full shrink-0"></span>
                                 <span class="text-[11px] font-medium text-emerald-400 w-[70px] shrink-0">Excelente</span>
                                 <span class="text-[11px] text-slate-500 shrink-0">CPL &le;</span>
-                                <span class="text-[11px] text-slate-500 shrink-0">R$</span>
+                                <span class="text-[11px] text-slate-500 shrink-0 cpl-currency-symbol">R$</span>
                                 <input type="number" id="cplExcellent" step="0.01" min="0"
                                     class="w-20 bg-surface-dark border border-border-dark text-white rounded py-1 px-2 text-xs text-center focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
                                     placeholder="15">
@@ -1015,7 +1015,7 @@
                                 <span class="w-2 h-2 bg-blue-400 rounded-full shrink-0"></span>
                                 <span class="text-[11px] font-medium text-blue-400 w-[70px] shrink-0">Saudavel</span>
                                 <span class="text-[11px] text-slate-500 shrink-0">CPL &le;</span>
-                                <span class="text-[11px] text-slate-500 shrink-0">R$</span>
+                                <span class="text-[11px] text-slate-500 shrink-0 cpl-currency-symbol">R$</span>
                                 <input type="number" id="cplHealthy" step="0.01" min="0"
                                     class="w-20 bg-surface-dark border border-border-dark text-white rounded py-1 px-2 text-xs text-center focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                                     placeholder="25">
@@ -1026,7 +1026,7 @@
                                 <span class="w-2 h-2 bg-amber-400 rounded-full shrink-0"></span>
                                 <span class="text-[11px] font-medium text-amber-400 w-[70px] shrink-0">Atencao</span>
                                 <span class="text-[11px] text-slate-500 shrink-0">CPL &le;</span>
-                                <span class="text-[11px] text-slate-500 shrink-0">R$</span>
+                                <span class="text-[11px] text-slate-500 shrink-0 cpl-currency-symbol">R$</span>
                                 <input type="number" id="cplWarning" step="0.01" min="0"
                                     class="w-20 bg-surface-dark border border-border-dark text-white rounded py-1 px-2 text-xs text-center focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                                     placeholder="40">
@@ -1048,7 +1048,7 @@
                                     <div class="bg-red-500 flex-1"></div>
                                 </div>
                                 <div class="flex justify-between text-[9px] text-slate-500 mt-0.5 px-0.5">
-                                    <span>R$0</span>
+                                    <span class="cpl-currency-symbol">R$</span>
                                     <span id="cplPreviewExcellent"></span>
                                     <span id="cplPreviewHealthy"></span>
                                     <span id="cplPreviewWarning"></span>
