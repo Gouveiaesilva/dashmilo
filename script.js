@@ -887,18 +887,20 @@ async function addClient(event) {
 
     let result;
 
-    // Coletar webhook (opcional)
+    // Coletar campos opcionais
     const googleChatWebhook = document.getElementById('googleChatWebhook').value.trim() || null;
+    const adsManagerUrl = document.getElementById('adsManagerUrl').value.trim() || null;
 
     if (editingClientId) {
         // Modo edição: atualizar cliente existente
-        const updates = { name: clientName, adAccountId: adAccountId, cplTargets: cplTargets, googleChatWebhook: googleChatWebhook };
+        const updates = { name: clientName, adAccountId: adAccountId, cplTargets: cplTargets, googleChatWebhook: googleChatWebhook, adsManagerUrl: adsManagerUrl };
         result = await updateClientAPI(editingClientId, updates, currentAdminPassword);
     } else {
         // Modo criação: adicionar novo cliente
         const clientData = { name: clientName, adAccountId: adAccountId };
         if (cplTargets) clientData.cplTargets = cplTargets;
         if (googleChatWebhook) clientData.googleChatWebhook = googleChatWebhook;
+        if (adsManagerUrl) clientData.adsManagerUrl = adsManagerUrl;
         result = await addClientAPI(clientData, currentAdminPassword);
     }
 
@@ -927,6 +929,7 @@ async function addClient(event) {
         document.getElementById('cplBandsArrow').style.transform = '';
         document.getElementById('cplPreview').classList.add('hidden');
         document.getElementById('googleChatWebhook').value = '';
+        document.getElementById('adsManagerUrl').value = '';
 
         showToast(wasEditing ? 'Cliente atualizado com sucesso!' : 'Cliente adicionado com sucesso!');
     } else {
@@ -981,8 +984,9 @@ async function editClient(clientId) {
         document.getElementById('cplWarning').value = '';
     }
 
-    // Preencher webhook
+    // Preencher webhook e link do gerenciador
     document.getElementById('googleChatWebhook').value = client.googleChatWebhook || '';
+    document.getElementById('adsManagerUrl').value = client.adsManagerUrl || '';
 
     updateCplPreview();
     updateFormMode();
@@ -1117,6 +1121,7 @@ function updateSelectedClientName() {
 async function onClientFilterChange() {
     updateSelectedClientName();
     updateSendReportButton();
+    updateAdsManagerLink();
 
     const select = document.getElementById('clientFilter');
     const selectedOption = select.options[select.selectedIndex];
@@ -1137,6 +1142,23 @@ async function onClientFilterChange() {
     } else {
         currentAdAccountId = null;
         resetDashboard();
+    }
+}
+
+// Atualizar link do Gerenciador de Anuncios
+function updateAdsManagerLink() {
+    const link = document.getElementById('adsManagerLink');
+    if (!link) return;
+    const select = document.getElementById('clientFilter');
+    if (!select.value) { link.classList.add('hidden'); link.classList.remove('flex'); return; }
+    const client = clientsCache.find(c => c.id === select.value);
+    if (client && client.adsManagerUrl) {
+        link.href = client.adsManagerUrl;
+        link.classList.remove('hidden');
+        link.classList.add('flex');
+    } else {
+        link.classList.add('hidden');
+        link.classList.remove('flex');
     }
 }
 
@@ -1437,6 +1459,10 @@ function resetDashboard() {
     if (analysisSection) analysisSection.classList.add('hidden');
     analysisTab = null;
     creativesCampaignFilter = null;
+
+    // Esconder link do gerenciador
+    const adsLink = document.getElementById('adsManagerLink');
+    if (adsLink) { adsLink.classList.add('hidden'); adsLink.classList.remove('flex'); }
 
     // Limpar dados atuais
     currentDashboardData = null;

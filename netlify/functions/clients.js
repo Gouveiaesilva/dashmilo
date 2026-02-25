@@ -86,6 +86,7 @@ exports.handler = async (event, context) => {
                 color: client.color || getRandomColor(),
                 cplTargets: client.cplTargets || null,
                 googleChatWebhook: client.googleChatWebhook || null,
+                adsManagerUrl: client.adsManagerUrl || null,
                 reportSchedules: client.reportSchedules || [],
                 createdAt: new Date().toISOString()
             };
@@ -147,6 +148,7 @@ exports.handler = async (event, context) => {
             // cplTargets pode ser null (remover) ou objeto
             if (updates.hasOwnProperty('cplTargets')) clients[index].cplTargets = updates.cplTargets;
             if (updates.hasOwnProperty('googleChatWebhook')) clients[index].googleChatWebhook = updates.googleChatWebhook;
+            if (updates.hasOwnProperty('adsManagerUrl')) clients[index].adsManagerUrl = updates.adsManagerUrl;
             if (updates.hasOwnProperty('reportSchedules')) clients[index].reportSchedules = updates.reportSchedules;
 
             await store.setJSON(CLIENTS_KEY, clients);
