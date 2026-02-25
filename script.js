@@ -1983,9 +1983,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// Acumuladores para KPIs da visao geral
+var overviewMetricsAccum = { totalSpend: 0, totalLeads: 0, clientMetrics: [] };
+
 async function loadOverviewData() {
     const rowsContainer = document.getElementById('overviewBoardRows');
     const loading = document.getElementById('overviewLoading');
+
+    // Reset acumuladores
+    overviewMetricsAccum = { totalSpend: 0, totalLeads: 0, clientMetrics: [] };
 
     // Limpar rows e cards existentes, resetar ordenacao
     rowsContainer.querySelectorAll('.overview-board-row').forEach(r => r.remove());
@@ -1995,6 +2001,9 @@ async function loadOverviewData() {
     overviewSortAsc = true;
     document.querySelectorAll('.board-sort-icon').forEach(i => i.textContent = 'unfold_more');
     document.querySelectorAll('.board-sort-col').forEach(c => c.classList.remove('text-white'));
+
+    // Reset KPIs visuais
+    updateOverviewKPIs(null);
 
     // Mostrar loading
     if (loading) {
@@ -2066,7 +2075,17 @@ async function loadOverviewData() {
         // FASE 2: Buscar metricas de cada cliente em paralelo
         const insightPromises = clients.map(client => {
             return fetchOverviewInsights(client.adAccountId, baseUrl)
-                .then(metrics => updateRowMetrics(client.id, metrics))
+                .then(metrics => {
+                    updateRowMetrics(client.id, metrics);
+                    // Acumular para KPIs agregados
+                    if (metrics && metrics.spend > 0) {
+                        overviewMetricsAccum.totalSpend += metrics.spend;
+                        overviewMetricsAccum.totalLeads += (metrics.leads || 0);
+                        overviewMetricsAccum.clientMetrics.push({ id: client.id, name: client.name, color: client.color, spend: metrics.spend, leads: metrics.leads || 0 });
+                    }
+                    updateOverviewKPIs(overviewMetricsAccum);
+                    updateOverviewDistribution(overviewMetricsAccum);
+                })
                 .catch(err => {
                     console.warn(`Insights error for ${client.name}:`, err);
                     updateRowMetrics(client.id, null);
@@ -2544,6 +2563,67 @@ function updateOverviewSummary(total, active, problems) {
     if (totalEl) totalEl.textContent = total;
     if (activeEl) activeEl.textContent = active;
     if (problemEl) problemEl.textContent = problems;
+}
+
+function updateOverviewKPIs(accum) {
+    const spendEl = document.getElementById('overviewTotalSpend');
+    const leadsEl = document.getElementById('overviewTotalLeads');
+    const cplEl = document.getElementById('overviewAvgCpl');
+
+    if (!accum) {
+        if (spendEl) spendEl.textContent = '--';
+        if (leadsEl) leadsEl.textContent = '--';
+        if (cplEl) cplEl.textContent = '--';
+        return;
+    }
+
+    if (spendEl) spendEl.textContent = formatCurrency(accum.totalSpend);
+    if (leadsEl) leadsEl.textContent = formatNumber(accum.totalLeads);
+    if (cplEl) {
+        if (accum.totalLeads > 0) {
+            cplEl.textContent = formatCurrency(accum.totalSpend / accum.totalLeads);
+        } else {
+            cplEl.textContent = accum.totalSpend > 0 ? '--' : '--';
+        }
+    }
+}
+
+function updateOverviewDistribution(accum) {
+    const container = document.getElementById('overviewDistribution');
+    const barEl = document.getElementById('overviewDistBar');
+    const legendEl = document.getElementById('overviewDistLegend');
+    if (!container || !barEl || !legendEl) return;
+
+    if (!accum || accum.clientMetrics.length === 0 || accum.totalSpend <= 0) {
+        container.classList.add('hidden');
+        return;
+    }
+
+    container.classList.remove('hidden');
+    container.classList.add('block');
+
+    // Ordenar por gasto (maior primeiro)
+    const sorted = accum.clientMetrics.slice().sort((a, b) => b.spend - a.spend);
+
+    // Gerar barra
+    const tailwindColors = {
+        blue: '#3b82f6', red: '#ef4444', green: '#22c55e', amber: '#f59e0b', purple: '#a855f7',
+        pink: '#ec4899', cyan: '#06b6d4', orange: '#f97316', emerald: '#10b981', indigo: '#6366f1',
+        teal: '#14b8a6', rose: '#f43f5e', lime: '#84cc16', sky: '#0ea5e9', violet: '#8b5cf6',
+        yellow: '#eab308', fuchsia: '#d946ef', slate: '#64748b'
+    };
+
+    barEl.innerHTML = sorted.map(function(c) {
+        var pct = (c.spend / accum.totalSpend) * 100;
+        var color = tailwindColors[c.color] || tailwindColors.blue;
+        return '<div style="width:' + pct.toFixed(1) + '%;background:' + color + '" class="h-full transition-all duration-500" title="' + c.name + ': ' + formatCurrency(c.spend) + ' (' + Math.round(pct) + '%)"></div>';
+    }).join('');
+
+    legendEl.innerHTML = sorted.map(function(c) {
+        var pct = Math.round((c.spend / accum.totalSpend) * 100);
+        var color = tailwindColors[c.color] || tailwindColors.blue;
+        return '<span class="flex items-center gap-1.5 text-[10px] sm:text-xs text-slate-400"><span class="w-2.5 h-2.5 rounded-sm shrink-0" style="background:' + color + '"></span><span class="font-medium text-slate-300">' + c.name + '</span><span>' + pct + '%</span></span>';
+    }).join('');
 }
 
 function navigateToClient(clientId) {
