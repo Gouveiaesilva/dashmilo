@@ -791,7 +791,7 @@ async function fetchAccountStatuses(params, accessToken) {
         try {
             // Buscar dados da conta e campanhas ativas em paralelo
             const [accountRes, campaignsRes] = await Promise.all([
-                fetch(`${META_API_BASE}/${accountId}?fields=account_status,balance,spend_cap,amount_spent,currency,disable_reason,name,is_prepay_account&access_token=${accessToken}`),
+                fetch(`${META_API_BASE}/${accountId}?fields=account_status,balance,spend_cap,amount_spent,currency,disable_reason,name,is_prepay_account,funding_source_details&access_token=${accessToken}`),
                 fetch(`${META_API_BASE}/${accountId}/campaigns?fields=effective_status&filtering=${encodeURIComponent(JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]))}&limit=1&access_token=${accessToken}`)
             ]);
 
@@ -800,6 +800,25 @@ async function fetchAccountStatuses(params, accessToken) {
 
             if (accountData.error) {
                 return { accountId, error: true, message: accountData.error.message };
+            }
+
+            // Extrair saldo real do funding_source_details (mais preciso que balance)
+            let fundingBalance = null;
+            if (accountData.funding_source_details) {
+                const fsd = accountData.funding_source_details;
+                // display_string contém "Available Balance (R$897.21)" ou similar
+                if (fsd.display_string) {
+                    const match = fsd.display_string.match(/[\d.,]+/);
+                    if (match) {
+                        // Converter string formatada para centavos
+                        const numStr = match[0].replace(/\./g, '').replace(',', '.');
+                        fundingBalance = Math.round(parseFloat(numStr) * 100);
+                    }
+                }
+                // Alguns retornam campo current_balance diretamente
+                if (fsd.current_balance != null) {
+                    fundingBalance = parseInt(fsd.current_balance);
+                }
             }
 
             return {
@@ -812,6 +831,7 @@ async function fetchAccountStatuses(params, accessToken) {
                 disable_reason: accountData.disable_reason,
                 name: accountData.name,
                 is_prepay_account: !!accountData.is_prepay_account,
+                funding_balance: fundingBalance,
                 hasActiveCampaigns: !!(campaignsData.data && campaignsData.data.length > 0),
                 error: false
             };

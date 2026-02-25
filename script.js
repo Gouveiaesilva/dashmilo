@@ -2312,25 +2312,27 @@ function renderOverviewRow(client, statusData, cardState) {
 }
 
 // Calcular saldo restante de conta pré-paga (em centavos)
-// Prioridade: balance (atualizado em tempo real pela Meta)
-// Fallback: spend_cap - amount_spent (só quando balance = 0 e spend_cap > 0)
+// Prioridade: funding_balance (saldo real da fonte de pagamento)
+// Fallback: spend_cap - amount_spent
 function getPrepaidRemainingCents(statusData) {
-    const balance = parseInt(statusData.balance || '0');
+    // funding_balance é o saldo real extraído de funding_source_details
+    if (statusData.funding_balance != null && statusData.funding_balance > 0) {
+        return statusData.funding_balance;
+    }
+
     const spendCap = parseInt(statusData.spend_cap || '0');
     const amountSpent = parseInt(statusData.amount_spent || '0');
 
-    // balance é "bill amount due" em centavos:
-    //   negativo = crédito disponível (ex: -500000 = R$5.000 de crédito)
-    //   zero = sem crédito
-    //   positivo = valor devido (raro em pré-pago)
-    if (balance !== 0) {
-        return Math.abs(balance);
-    }
-
-    // Fallback: spend_cap - amount_spent
+    // spend_cap - amount_spent é a melhor estimativa para pré-pago
     // IMPORTANTE: spend_cap = 0 significa "sem limite" (NÃO "zero reais")
     if (spendCap > 0) {
         return Math.max(0, spendCap - amountSpent);
+    }
+
+    // Ultimo fallback: balance (bill amount due)
+    const balance = parseInt(statusData.balance || '0');
+    if (balance !== 0) {
+        return Math.abs(balance);
     }
 
     return 0;
