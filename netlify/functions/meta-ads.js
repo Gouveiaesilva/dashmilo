@@ -249,12 +249,20 @@ async function fetchCampaignsWithInsights(accountId, accessToken, params) {
         'messaging_conversation_started_7d'          // variante
     ];
 
-    // Incluir campanhas com gasto > 0 que geraram resultado relevante (lead ou conversa)
+    // Objetivos que são intrinsecamente de leads/mensagens (sempre incluir se tiveram gasto)
+    const alwaysIncludeObjectives = ['OUTCOME_LEADS', 'LEAD_GENERATION', 'MESSAGES'];
+
+    // Incluir campanhas com gasto > 0:
+    // - LEADS/MESSAGES: sempre (mesmo sem resultados, o gasto é relevante)
+    // - ENGAGEMENT/SALES: apenas se geraram resultado de lead/conversa nas actions
     const campaignsWithInsights = allCampaigns.filter(campaign => {
         const insightData = campaignInsightsMap.get(campaign.id);
         if (!insightData || insightData.spend <= 0) return false;
 
-        // Verificar se a campanha gerou algum resultado de lead/conversa nas actions
+        // Campanhas de leads/mensagens: sempre incluir
+        if (alwaysIncludeObjectives.includes(campaign.objective)) return true;
+
+        // Campanhas de engagement/sales: filtrar por resultado real
         const actions = insightData.actions || [];
         const hasLeadResult = actions.some(a =>
             leadActionTypes.includes(a.action_type) && parseInt(a.value || 0) > 0

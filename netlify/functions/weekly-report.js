@@ -282,6 +282,11 @@ async function fetchInsightsData(adAccountId, since, until, accessToken) {
         'messaging_conversations_started'
     ];
 
+    // Mapa de objetivo por campanha e objetivos que sempre incluímos
+    const objectiveMap = new Map();
+    allCampaigns.forEach(c => objectiveMap.set(c.id, c.objective));
+    const alwaysIncludeObjectives = ['OUTCOME_LEADS', 'LEAD_GENERATION', 'MESSAGES'];
+
     let totalSpend = 0, totalLeads = 0, totalImpressions = 0;
     const campaignResults = [];
 
@@ -290,12 +295,17 @@ async function fetchInsightsData(adAccountId, since, until, accessToken) {
         const impressions = parseInt(insight.impressions || 0);
         if (impressions === 0 || spend <= 0) return;
 
-        // Filtrar: só incluir campanhas cujo resultado real é lead ou conversa
+        const objective = objectiveMap.get(insight.campaign_id);
         const actions = insight.actions || [];
-        const hasLeadResult = actions.some(a =>
-            leadActionTypes.includes(a.action_type) && parseInt(a.value || 0) > 0
-        );
-        if (!hasLeadResult) return;
+
+        // Campanhas de LEADS/MESSAGES: sempre incluir (mesmo sem resultados)
+        // Campanhas de ENGAGEMENT/SALES: só incluir se geraram lead/conversa
+        if (!alwaysIncludeObjectives.includes(objective)) {
+            const hasLeadResult = actions.some(a =>
+                leadActionTypes.includes(a.action_type) && parseInt(a.value || 0) > 0
+            );
+            if (!hasLeadResult) return;
+        }
 
         // Determinar tipo de conversão baseado nas actions reais
         const hasMessageResult = actions.some(a =>
