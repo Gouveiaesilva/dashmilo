@@ -16,6 +16,7 @@
 
     <script src="script.js"></script>
     <script src="report.js" defer></script>
+    <script src="macro-analysis.js" defer></script>
 
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
@@ -563,11 +564,15 @@
                     </div>
                 </div>
 
-                <!-- Botao Gerar -->
-                <div class="flex items-end">
-                    <button id="generateReportBtn" onclick="generateReport()" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary text-white rounded-lg text-sm font-bold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <!-- Botoes Gerar -->
+                <div class="flex items-end gap-2">
+                    <button id="generateReportBtn" onclick="generateReport()" class="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-primary text-white rounded-lg text-sm font-bold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                         <span class="material-symbols-outlined text-lg">analytics</span>
-                        Gerar Relatorio
+                        Relatorio
+                    </button>
+                    <button id="generateMacroBtn" onclick="generateMacroAnalysis()" class="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-amber-500 text-white rounded-lg text-sm font-bold hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        <span class="material-symbols-outlined text-lg">query_stats</span>
+                        Analise Macro
                     </button>
                 </div>
             </div>
@@ -598,6 +603,25 @@
         <!-- Preview do Relatorio (renderizado via JS) -->
         <div id="reportPreview" class="hidden space-y-4">
             <!-- Conteudo gerado por renderReportPreview() -->
+        </div>
+
+        <!-- Progresso da Analise Macro -->
+        <div id="macroAnalysisProgress" class="hidden bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm">
+            <div class="flex items-center gap-4 mb-4">
+                <div class="w-10 h-10 border-3 border-amber-500/20 border-t-amber-500 rounded-full animate-spin shrink-0"></div>
+                <div>
+                    <h3 class="text-sm font-bold text-white">Gerando Analise Macro...</h3>
+                    <p id="macroProgressText" class="text-xs text-slate-500 mt-0.5">Buscando dados da conta...</p>
+                </div>
+            </div>
+            <div class="w-full bg-background-dark rounded-full h-2">
+                <div id="macroProgressBar" class="bg-amber-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Resultado da Analise Macro -->
+        <div id="macroAnalysisResult" class="hidden space-y-4">
+            <!-- Conteudo gerado por renderMacroAnalysis() -->
         </div>
 
         <!-- Envio Automatico -->

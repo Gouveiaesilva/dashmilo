@@ -111,6 +111,12 @@ exports.handler = async (event, context) => {
                 result = await fetchCampaignAnalysis(formattedAccountId, accessToken, params);
                 break;
 
+            case 'macro-analysis': {
+                // Análise macro: busca todos os dados brutos para análise completa da conta
+                result = await fetchMacroAnalysis(formattedAccountId, accessToken, params);
+                break;
+            }
+
             case 'ad-daily': {
                 // Buscar insights diários de um anúncio específico
                 const { adId: targetAdId } = params;
@@ -1168,4 +1174,62 @@ async function fetchAdDailyInsights(accountId, adId, accessToken, params) {
     }).sort((a, b) => new Date(a.date) - new Date(b.date));
 
     return { daily };
+}
+
+// ==========================================
+// ANÁLISE MACRO — DADOS BRUTOS DA CONTA
+// ==========================================
+async function fetchMacroAnalysis(accountId, accessToken, params) {
+    const { timeRange, prevTimeRange } = params;
+
+    if (!timeRange || !prevTimeRange) {
+        throw new Error('timeRange e prevTimeRange são obrigatórios para macro-analysis');
+    }
+
+    const statusFilter = encodeURIComponent(JSON.stringify([{
+        field: 'effective_status',
+        operator: 'IN',
+        value: ['ACTIVE', 'PAUSED', 'ARCHIVED']
+    }]));
+
+    // 4 chamadas em paralelo
+    const [campaignsRes, currentDailyRes, prevDailyRes, currentAdsRes] = await Promise.all([
+        // 1. Todas as campanhas (sem filtro de objetivo)
+        fetch(`${META_API_BASE}/${accountId}/campaigns?fields=id,name,objective,status,effective_status,daily_budget,lifetime_budget,created_time&filtering=${statusFilter}&access_token=${accessToken}&limit=500`),
+        // 2. Insights diários - período atual (todas as campanhas)
+        fetch(`${META_API_BASE}/${accountId}/insights?fields=campaign_id,campaign_name,spend,impressions,reach,clicks,actions&level=campaign&time_increment=1&time_range=${encodeURIComponent(timeRange)}&access_token=${accessToken}&limit=500`),
+        // 3. Insights diários - período anterior
+        fetch(`${META_API_BASE}/${accountId}/insights?fields=campaign_id,campaign_name,spend,impressions,reach,clicks,actions&level=campaign&time_increment=1&time_range=${encodeURIComponent(prevTimeRange)}&access_token=${accessToken}&limit=500`),
+        // 4. Insights por anúncio (agregado)
+        fetch(`${META_API_BASE}/${accountId}/insights?fields=ad_id,ad_name,campaign_id,campaign_name,spend,impressions,clicks,actions&level=ad&time_range=${encodeURIComponent(timeRange)}&access_token=${accessToken}&limit=500`)
+    ]);
+
+    const [campaignsData, currentDailyData, prevDailyData, currentAdsData] = await Promise.all([
+        campaignsRes.json(), currentDailyRes.json(), prevDailyRes.json(), currentAdsRes.json()
+    ]);
+
+    // Paginação para daily data (pode exceder 500 rows)
+    async function fetchAllPages(initialData) {
+        let allData = initialData.data || [];
+        let nextUrl = initialData.paging?.next;
+        while (nextUrl) {
+            const res = await fetch(nextUrl);
+            const page = await res.json();
+            allData = allData.concat(page.data || []);
+            nextUrl = page.paging?.next;
+        }
+        return allData;
+    }
+
+    const [currentDaily, prevDaily] = await Promise.all([
+        fetchAllPages(currentDailyData),
+        fetchAllPages(prevDailyData)
+    ]);
+
+    return {
+        campaigns: campaignsData.data || [],
+        currentDaily,
+        prevDaily,
+        ads: currentAdsData.data || []
+    };
 }

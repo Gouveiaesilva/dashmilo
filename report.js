@@ -40,11 +40,13 @@ function onReportPeriodChange() {
 function updateReportPeriodInfo() {
     const clientSelect = document.getElementById('reportClientFilter');
     const btn = document.getElementById('generateReportBtn');
+    const macroBtn = document.getElementById('generateMacroBtn');
     const periodInfo = document.getElementById('reportPeriodInfo');
     const periodText = document.getElementById('reportPeriodText');
 
     if (clientSelect.value) {
         btn.disabled = false;
+        if (macroBtn) macroBtn.disabled = false;
         periodInfo.classList.remove('hidden');
 
         const period = getReportPeriod();
@@ -55,6 +57,7 @@ function updateReportPeriodInfo() {
             '<br><strong>Comparacao:</strong> periodo anterior (' + formatDateBR(prevPeriod.since) + ' a ' + formatDateBR(prevPeriod.until) + ')';
     } else {
         btn.disabled = true;
+        if (macroBtn) macroBtn.disabled = true;
         periodInfo.classList.add('hidden');
     }
 }
