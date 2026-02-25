@@ -297,9 +297,13 @@ async function fetchCampaignsWithInsights(accountId, accessToken, params) {
         if (campaign.objective === 'OUTCOME_ENGAGEMENT' || campaign.objective === 'OUTCOME_SALES') {
             // Incluir se destination_type contém WHATSAPP
             if (whatsappEngagementIds.has(campaign.id)) return true;
-            // OU se gerou conversas de mensagem nas actions
+            // OU se gerou conversas de mensagem de forma significativa nas actions
+            // (mínimo 10 conversas para não incluir campanhas de vídeo/engajamento com conversas acidentais)
             const actions = insightData.actions || [];
-            const hasMessaging = actions.some(a => messagingActionTypes.includes(a.action_type));
+            const messagingCount = actions
+                .filter(a => messagingActionTypes.includes(a.action_type))
+                .reduce((sum, a) => sum + parseInt(a.value || 0), 0);
+            const hasMessaging = messagingCount >= 10;
             if (hasMessaging) return true;
         }
 

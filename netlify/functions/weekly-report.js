@@ -267,18 +267,32 @@ async function fetchInsightsData(adAccountId, since, until, accessToken) {
         const excludedOptGoals = ['THRUPLAY', 'REACH', 'IMPRESSIONS', 'LINK_CLICKS', 'LANDING_PAGE_VIEWS', 'POST_ENGAGEMENT', 'VIDEO_VIEWS'];
         if (adsetsData.data) {
             adsetsData.data.forEach(adset => {
-                if (adset.destination_type === 'WHATSAPP' && !excludedOptGoals.includes(adset.optimization_goal)) {
+                const dest = (adset.destination_type || '').toUpperCase();
+                if (dest.includes('WHATSAPP') && !excludedOptGoals.includes(adset.optimization_goal)) {
                     whatsappCampaignIds.add(adset.campaign_id);
                 }
             });
         }
     }
 
-    // Filtrar campanhas: LEADS e MESSAGES sempre, ENGAGEMENT/SALES apenas se WhatsApp
+    // Filtrar campanhas: LEADS e MESSAGES sempre, ENGAGEMENT/SALES apenas se WhatsApp ou com conversas significativas
+    const messagingActionTypes = [
+        'onsite_conversion.messaging_conversation_started_7d',
+        'onsite_conversion.total_messaging_connection',
+        'onsite_conversion.messaging_first_reply'
+    ];
     const campaigns = allCampaigns.filter(c => {
         if (c.objective === 'OUTCOME_LEADS' || c.objective === 'LEAD_GENERATION') return true;
         if (c.objective === 'MESSAGES') return true;
-        if (needsDestinationCheck.includes(c.objective)) return whatsappCampaignIds.has(c.id);
+        if (needsDestinationCheck.includes(c.objective)) {
+            if (whatsappCampaignIds.has(c.id)) return true;
+            // Fallback: incluir se gerou conversas significativas (min 10)
+            const actions = c.actions || [];
+            const msgCount = actions
+                .filter(a => messagingActionTypes.includes(a.action_type))
+                .reduce((sum, a) => sum + parseInt(a.value || 0), 0);
+            return msgCount >= 10;
+        }
         return false;
     });
 
