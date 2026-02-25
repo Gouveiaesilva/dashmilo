@@ -1144,18 +1144,19 @@ async function onClientFilterChange() {
 // Atualizar link do Gerenciador de Anuncios (gerado automaticamente pelo adAccountId)
 function updateAdsManagerLink() {
     const link = document.getElementById('adsManagerLink');
-    if (!link) return;
+    const banner = document.getElementById('platformBanner');
+    if (!link || !banner) return;
     const select = document.getElementById('clientFilter');
-    if (!select.value) { link.classList.add('hidden'); link.classList.remove('flex'); return; }
+    if (!select.value) { banner.classList.add('hidden'); banner.classList.remove('flex'); return; }
     const client = clientsCache.find(c => c.id === select.value);
     if (client && client.adAccountId) {
         const actId = client.adAccountId.replace(/^act_/, '');
         link.href = 'https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=' + actId;
-        link.classList.remove('hidden');
-        link.classList.add('flex');
+        banner.classList.remove('hidden');
+        banner.classList.add('flex');
     } else {
-        link.classList.add('hidden');
-        link.classList.remove('flex');
+        banner.classList.add('hidden');
+        banner.classList.remove('flex');
     }
 }
 
@@ -1457,9 +1458,9 @@ function resetDashboard() {
     analysisTab = null;
     creativesCampaignFilter = null;
 
-    // Esconder link do gerenciador
-    const adsLink = document.getElementById('adsManagerLink');
-    if (adsLink) { adsLink.classList.add('hidden'); adsLink.classList.remove('flex'); }
+    // Esconder banner de plataforma
+    const platformBanner = document.getElementById('platformBanner');
+    if (platformBanner) { platformBanner.classList.add('hidden'); platformBanner.classList.remove('flex'); }
 
     // Limpar dados atuais
     currentDashboardData = null;
