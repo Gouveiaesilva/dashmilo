@@ -889,18 +889,16 @@ async function addClient(event) {
 
     // Coletar campos opcionais
     const googleChatWebhook = document.getElementById('googleChatWebhook').value.trim() || null;
-    const adsManagerUrl = document.getElementById('adsManagerUrl').value.trim() || null;
 
     if (editingClientId) {
         // Modo edição: atualizar cliente existente
-        const updates = { name: clientName, adAccountId: adAccountId, cplTargets: cplTargets, googleChatWebhook: googleChatWebhook, adsManagerUrl: adsManagerUrl };
+        const updates = { name: clientName, adAccountId: adAccountId, cplTargets: cplTargets, googleChatWebhook: googleChatWebhook };
         result = await updateClientAPI(editingClientId, updates, currentAdminPassword);
     } else {
         // Modo criação: adicionar novo cliente
         const clientData = { name: clientName, adAccountId: adAccountId };
         if (cplTargets) clientData.cplTargets = cplTargets;
         if (googleChatWebhook) clientData.googleChatWebhook = googleChatWebhook;
-        if (adsManagerUrl) clientData.adsManagerUrl = adsManagerUrl;
         result = await addClientAPI(clientData, currentAdminPassword);
     }
 
@@ -929,7 +927,6 @@ async function addClient(event) {
         document.getElementById('cplBandsArrow').style.transform = '';
         document.getElementById('cplPreview').classList.add('hidden');
         document.getElementById('googleChatWebhook').value = '';
-        document.getElementById('adsManagerUrl').value = '';
 
         showToast(wasEditing ? 'Cliente atualizado com sucesso!' : 'Cliente adicionado com sucesso!');
     } else {
@@ -984,9 +981,8 @@ async function editClient(clientId) {
         document.getElementById('cplWarning').value = '';
     }
 
-    // Preencher webhook e link do gerenciador
+    // Preencher webhook
     document.getElementById('googleChatWebhook').value = client.googleChatWebhook || '';
-    document.getElementById('adsManagerUrl').value = client.adsManagerUrl || '';
 
     updateCplPreview();
     updateFormMode();
@@ -1145,15 +1141,16 @@ async function onClientFilterChange() {
     }
 }
 
-// Atualizar link do Gerenciador de Anuncios
+// Atualizar link do Gerenciador de Anuncios (gerado automaticamente pelo adAccountId)
 function updateAdsManagerLink() {
     const link = document.getElementById('adsManagerLink');
     if (!link) return;
     const select = document.getElementById('clientFilter');
     if (!select.value) { link.classList.add('hidden'); link.classList.remove('flex'); return; }
     const client = clientsCache.find(c => c.id === select.value);
-    if (client && client.adsManagerUrl) {
-        link.href = client.adsManagerUrl;
+    if (client && client.adAccountId) {
+        const actId = client.adAccountId.replace(/^act_/, '');
+        link.href = 'https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=' + actId;
         link.classList.remove('hidden');
         link.classList.add('flex');
     } else {
