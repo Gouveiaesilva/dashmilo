@@ -322,6 +322,15 @@ async function fetchInsightsData(adAccountId, since, until, accessToken) {
 function countLeadsFromActions(actions, conversionType) {
     if (!actions || !Array.isArray(actions)) return 0;
 
+    const messageTypes = [
+        'onsite_conversion.messaging_conversation_started_7d',
+        'messaging_conversation_started_7d',
+        'onsite_conversion.messaging_first_reply',
+        'messaging_first_reply',
+        'onsitemessaging_conversation_started_7d',
+        'messaging_conversations_started'
+    ];
+
     if (conversionType === 'form') {
         const onsite = actions.find(a => a.action_type === 'onsite_conversion.lead_grouped');
         const pixel = actions.find(a => a.action_type === 'offsite_conversion.fb_pixel_lead');
@@ -332,18 +341,20 @@ function countLeadsFromActions(actions, conversionType) {
         }
 
         const leadAgg = actions.find(a => a.action_type === 'lead');
-        return leadAgg ? parseInt(leadAgg.value || 0) : 0;
+        if (leadAgg && parseInt(leadAgg.value || 0) > 0) {
+            return parseInt(leadAgg.value);
+        }
+
+        // Fallback: campanha de LEADS mas conversões reais são mensagens
+        for (const actionType of messageTypes) {
+            const action = actions.find(a => a.action_type === actionType);
+            if (action) return parseInt(action.value || 0);
+        }
+
+        return 0;
     }
 
     if (conversionType === 'message') {
-        const messageTypes = [
-            'onsite_conversion.messaging_conversation_started_7d',
-            'messaging_conversation_started_7d',
-            'onsite_conversion.messaging_first_reply',
-            'messaging_first_reply',
-            'onsitemessaging_conversation_started_7d',
-            'messaging_conversations_started'
-        ];
         for (const actionType of messageTypes) {
             const action = actions.find(a => a.action_type === actionType);
             if (action) return parseInt(action.value || 0);

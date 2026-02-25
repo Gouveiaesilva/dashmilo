@@ -604,10 +604,18 @@ function processInsightsDataV2(insightsTotals, insightsDaily, campaignConversion
 function countLeads(actions, conversionType = 'form') {
     if (!actions || !Array.isArray(actions)) return 0;
 
+    const messageActionTypes = [
+        'onsite_conversion.messaging_conversation_started_7d',
+        'messaging_conversation_started_7d',
+        'onsite_conversion.messaging_first_reply',
+        'messaging_first_reply',
+        'onsitemessaging_conversation_started_7d',
+        'messaging_conversations_started'
+    ];
+
     // Contar apenas o tipo de conversão correspondente ao objetivo da campanha
     if (conversionType === 'form') {
         // Campanhas de LEADS: contar formularios nativos + leads no site (pixel)
-        // Somar tipos especificos; se nenhum existir, usar 'lead' (agregado) como fallback
         const onsite = actions.find(a => a.action_type === 'onsite_conversion.lead_grouped');
         const pixel = actions.find(a => a.action_type === 'offsite_conversion.fb_pixel_lead');
 
@@ -617,21 +625,21 @@ function countLeads(actions, conversionType = 'form') {
         }
 
         const leadAgg = actions.find(a => a.action_type === 'lead');
-        return leadAgg ? parseInt(leadAgg.value || 0) : 0;
+        if (leadAgg && parseInt(leadAgg.value || 0) > 0) {
+            return parseInt(leadAgg.value);
+        }
+
+        // Fallback: campanha de LEADS mas conversões reais são mensagens (ex: leads via WhatsApp)
+        for (const actionType of messageActionTypes) {
+            const msgAction = actions.find(a => a.action_type === actionType);
+            if (msgAction) return parseInt(msgAction.value || 0);
+        }
+
+        return 0;
     }
 
     if (conversionType === 'message') {
         // Campanhas de MENSAGENS: contar conversas iniciadas
-        // Testar múltiplos action_types possíveis
-        const messageActionTypes = [
-            'onsite_conversion.messaging_conversation_started_7d',
-            'messaging_conversation_started_7d',
-            'onsite_conversion.messaging_first_reply',
-            'messaging_first_reply',
-            'onsitemessaging_conversation_started_7d',
-            'messaging_conversations_started'
-        ];
-
         for (const actionType of messageActionTypes) {
             const msgAction = actions.find(a => a.action_type === actionType);
             if (msgAction) {
