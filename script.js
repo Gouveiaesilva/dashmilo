@@ -302,8 +302,12 @@ function selectDatePreset(preset, label) {
     // Fechar modal
     closeDateFilterModal();
 
-    // Recarregar dados se houver cliente selecionado
-    reloadDataWithCurrentFilter();
+    // Recarregar dados conforme painel ativo
+    if (currentPanel === 'visao-geral') {
+        loadOverviewData();
+    } else {
+        reloadDataWithCurrentFilter();
+    }
 }
 
 function applyCustomDateRange() {
@@ -337,8 +341,12 @@ function applyCustomDateRange() {
     // Fechar modal
     closeDateFilterModal();
 
-    // Recarregar dados
-    reloadDataWithCurrentFilter();
+    // Recarregar dados conforme painel ativo
+    if (currentPanel === 'visao-geral') {
+        loadOverviewData();
+    } else {
+        reloadDataWithCurrentFilter();
+    }
 }
 
 function getShortLabel(preset) {
