@@ -253,71 +253,34 @@ async function fetchInsightsData(adAccountId, since, until, accessToken) {
         return { summary: { spend: 0, leads: 0, cpl: 0, impressions: 0 }, campaigns: [] };
     }
 
-    // Verificar quais campanhas de ENGAGEMENT/SALES tem WhatsApp como destino
-    const needsDestinationCheck = ['OUTCOME_ENGAGEMENT', 'OUTCOME_SALES'];
-    const engagementCampaignIds = allCampaigns.filter(c => needsDestinationCheck.includes(c.objective)).map(c => c.id);
-
-    const whatsappCampaignIds = new Set();
-    if (engagementCampaignIds.length > 0) {
-        const engFiltering = JSON.stringify([{ field: 'campaign.id', operator: 'IN', value: engagementCampaignIds }]);
-        const adsetsUrl = `${META_API_BASE}/${accountId}/adsets?fields=campaign_id,destination_type,optimization_goal&filtering=${encodeURIComponent(engFiltering)}&access_token=${accessToken}&limit=500`;
-        const adsetsResp = await fetch(adsetsUrl);
-        const adsetsData = await adsetsResp.json();
-
-        const excludedOptGoals = ['THRUPLAY', 'REACH', 'IMPRESSIONS', 'LINK_CLICKS', 'LANDING_PAGE_VIEWS', 'POST_ENGAGEMENT', 'VIDEO_VIEWS'];
-        if (adsetsData.data) {
-            adsetsData.data.forEach(adset => {
-                const dest = (adset.destination_type || '').toUpperCase();
-                if (dest.includes('WHATSAPP') && !excludedOptGoals.includes(adset.optimization_goal)) {
-                    whatsappCampaignIds.add(adset.campaign_id);
-                }
-            });
-        }
-    }
-
-    // Filtrar campanhas: LEADS e MESSAGES sempre, ENGAGEMENT/SALES apenas se WhatsApp ou com conversas significativas
-    const messagingActionTypes = [
-        'onsite_conversion.messaging_conversation_started_7d',
-        'onsite_conversion.total_messaging_connection',
-        'onsite_conversion.messaging_first_reply'
-    ];
-    const campaigns = allCampaigns.filter(c => {
-        if (c.objective === 'OUTCOME_LEADS' || c.objective === 'LEAD_GENERATION') return true;
-        if (c.objective === 'MESSAGES') return true;
-        if (needsDestinationCheck.includes(c.objective)) {
-            if (whatsappCampaignIds.has(c.id)) return true;
-            // Fallback: incluir se gerou conversas significativas (min 10)
-            const actions = c.actions || [];
-            const msgCount = actions
-                .filter(a => messagingActionTypes.includes(a.action_type))
-                .reduce((sum, a) => sum + parseInt(a.value || 0), 0);
-            return msgCount >= 10;
-        }
-        return false;
-    });
-
-    if (campaigns.length === 0) {
-        return { summary: { spend: 0, leads: 0, cpl: 0, impressions: 0 }, campaigns: [] };
-    }
-
-    const campaignIds = campaigns.map(c => c.id);
-    const conversionMap = new Map();
-    campaigns.forEach(c => {
-        if (c.objective === 'OUTCOME_LEADS' || c.objective === 'LEAD_GENERATION') {
-            conversionMap.set(c.id, 'form');
-        } else {
-            conversionMap.set(c.id, 'message');
-        }
-    });
-
-    const filtering = JSON.stringify([{ field: 'campaign.id', operator: 'IN', value: campaignIds }]);
+    // Buscar insights de TODAS as campanhas para filtrar por resultado real
+    const allCampaignIds = allCampaigns.map(c => c.id);
+    const allFiltering = JSON.stringify([{ field: 'campaign.id', operator: 'IN', value: allCampaignIds }]);
     const fields = 'campaign_id,campaign_name,spend,impressions,actions';
-    const insightsUrl = `${META_API_BASE}/${accountId}/insights?fields=${fields}&filtering=${encodeURIComponent(filtering)}&access_token=${accessToken}&level=campaign&limit=500&time_range=${encodeURIComponent(timeRange)}`;
+    const insightsUrl = `${META_API_BASE}/${accountId}/insights?fields=${fields}&filtering=${encodeURIComponent(allFiltering)}&access_token=${accessToken}&level=campaign&limit=500&time_range=${encodeURIComponent(timeRange)}`;
 
     const insResp = await fetch(insightsUrl);
     const insData = await insResp.json();
 
     if (insData.error) throw new Error(insData.error.message);
+
+    // Tipos de resultado que contam como lead/conversa
+    const leadActionTypes = [
+        'onsite_conversion.lead_grouped',
+        'offsite_conversion.fb_pixel_lead',
+        'lead',
+        'onsite_conversion.messaging_conversation_started_7d',
+        'messaging_conversation_started_7d'
+    ];
+
+    // Tipos de conversa para determinar conversionType
+    const messageActionTypes = [
+        'onsite_conversion.messaging_conversation_started_7d',
+        'messaging_conversation_started_7d',
+        'onsite_conversion.messaging_first_reply',
+        'messaging_first_reply',
+        'messaging_conversations_started'
+    ];
 
     let totalSpend = 0, totalLeads = 0, totalImpressions = 0;
     const campaignResults = [];
@@ -325,9 +288,20 @@ async function fetchInsightsData(adAccountId, since, until, accessToken) {
     (insData.data || []).forEach(insight => {
         const spend = parseFloat(insight.spend || 0);
         const impressions = parseInt(insight.impressions || 0);
-        if (impressions === 0) return;
+        if (impressions === 0 || spend <= 0) return;
 
-        const convType = conversionMap.get(insight.campaign_id) || 'form';
+        // Filtrar: só incluir campanhas cujo resultado real é lead ou conversa
+        const actions = insight.actions || [];
+        const hasLeadResult = actions.some(a =>
+            leadActionTypes.includes(a.action_type) && parseInt(a.value || 0) > 0
+        );
+        if (!hasLeadResult) return;
+
+        // Determinar tipo de conversão baseado nas actions reais
+        const hasMessageResult = actions.some(a =>
+            messageActionTypes.includes(a.action_type) && parseInt(a.value || 0) > 0
+        );
+        const convType = hasMessageResult ? 'message' : 'form';
         const leads = countLeadsFromActions(insight.actions, convType);
 
         totalSpend += spend;
