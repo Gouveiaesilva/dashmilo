@@ -172,40 +172,124 @@ function buildOverview(currentMap, prevMap, campaigns) {
 // SECAO 2: TIMELINE
 // ==========================================
 
+function getStatusLabel(status) {
+    var m = { 'ACTIVE': 'Ativa', 'PAUSED': 'Pausada', 'DELETED': 'Excluida', 'ARCHIVED': 'Arquivada', 'CAMPAIGN_PAUSED': 'Campanha Pausada', 'ADSET_PAUSED': 'Conjunto Pausado', 'IN_PROCESS': 'Em Processamento', 'WITH_ISSUES': 'Com Problemas', 'PENDING_REVIEW': 'Em Revisao', 'DISAPPROVED': 'Reprovada', 'PREAPPROVED': 'Pre-aprovada', 'PENDING_BILLING_INFO': 'Pendente Faturamento', 'NOT_DELIVERING': 'Sem Veiculacao' };
+    return m[(status || '').toUpperCase()] || status || 'Desconhecido';
+}
+
+function getStatusBadge(status) {
+    var s = (status || '').toUpperCase();
+    if (s === 'ACTIVE') return '● Ativa';
+    if (s === 'PAUSED' || s === 'CAMPAIGN_PAUSED' || s === 'ADSET_PAUSED') return '◼ Pausada';
+    if (s === 'DELETED' || s === 'ARCHIVED') return '✕ ' + getStatusLabel(s);
+    return '○ ' + getStatusLabel(s);
+}
+
 function buildTimeline(currentMap, prevMap, campaigns, period) {
     var events = [];
+    // Mapa de metadados das campanhas (inclui effective_status, objective, budgets)
+    var meta = {};
+    campaigns.forEach(function(c) {
+        meta[c.id] = {
+            status: (c.effective_status || c.status || '').toUpperCase(),
+            objective: c.objective || '',
+            dailyBudget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0,
+            lifetimeBudget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : 0,
+            createdTime: c.created_time || ''
+        };
+    });
+
+    function statusInfo(id) {
+        var m = meta[id];
+        if (!m) return '';
+        return ' [Status atual: ' + getStatusBadge(m.status) + ']';
+    }
+
+    function budgetInfo(id) {
+        var m = meta[id];
+        if (!m) return '';
+        if (m.dailyBudget > 0) return 'Orcamento diario: ' + fmtCur(m.dailyBudget);
+        if (m.lifetimeBudget > 0) return 'Orcamento vitalicio: ' + fmtCur(m.lifetimeBudget);
+        return 'Orcamento definido no conjunto';
+    }
+
+    function objectiveInfo(id) {
+        var m = meta[id];
+        if (!m || !m.objective) return '';
+        return 'Objetivo: ' + getObjectiveLabel(m.objective);
+    }
+
+    // Campanhas novas (presentes no atual, ausentes no anterior)
     Object.keys(currentMap).forEach(function(id) {
         if (!prevMap[id]) {
             var c = currentMap[id];
             var days = c.days.filter(function(d) { return d.spend > 0; }).sort(function(a, b) { return a.date.localeCompare(b.date); });
-            if (days.length > 0) events.push({ date: days[0].date, type: 'new', icon: 'add_circle', color: 'emerald', text: 'Campanha "' + c.name + '" iniciou veiculacao', detail: 'Investiu ' + fmtCur(c.totalSpend) + ' em ' + days.length + ' dia(s)' });
+            if (days.length > 0) {
+                var detailParts = ['Investiu ' + fmtCur(c.totalSpend) + ' em ' + days.length + ' dia(s)'];
+                var obj = objectiveInfo(id);
+                if (obj) detailParts.push(obj);
+                var bud = budgetInfo(id);
+                if (bud) detailParts.push(bud);
+                detailParts.push(getStatusBadge((meta[id] || {}).status));
+                events.push({ date: days[0].date, type: 'new', icon: 'add_circle', color: 'emerald', text: 'Campanha "' + c.name + '" iniciou veiculacao', detail: detailParts.join(' | ') });
+            }
         }
     });
+
+    // Campanhas que pararam (presentes no anterior, ausentes no atual)
     Object.keys(prevMap).forEach(function(id) {
         if (!currentMap[id]) {
             var p = prevMap[id];
-            events.push({ date: period.since, type: 'stopped', icon: 'pause_circle', color: 'red', text: 'Campanha "' + p.name + '" parou de gastar', detail: 'Gastava ' + fmtCur(p.totalSpend) + ' no periodo anterior' });
+            var m = meta[id] || {};
+            var statusText = m.status ? getStatusBadge(m.status) : 'Status desconhecido';
+            var reason = '';
+            if (m.status === 'PAUSED' || m.status === 'CAMPAIGN_PAUSED') reason = 'Campanha foi pausada manualmente';
+            else if (m.status === 'DELETED' || m.status === 'ARCHIVED') reason = 'Campanha foi excluida/arquivada';
+            else if (m.status === 'ACTIVE') reason = 'Campanha esta ativa mas sem entrega — possivel problema de orcamento, segmentacao ou aprovacao';
+            else reason = 'Motivo provavel: ' + getStatusLabel(m.status);
+            events.push({ date: period.since, type: 'stopped', icon: 'pause_circle', color: 'red', text: 'Campanha "' + p.name + '" parou de gastar' + statusInfo(id), detail: 'Gastava ' + fmtCur(p.totalSpend) + ' no periodo anterior. ' + reason });
         }
     });
+
+    // Campanhas que existiam nos dois periodos — detectar gaps, retomadas, paradas
     Object.keys(currentMap).forEach(function(id) {
         if (!prevMap[id]) return;
         var c = currentMap[id];
+        var m = meta[id] || {};
         var activeDays = c.days.filter(function(d) { return d.spend > 0; }).sort(function(a, b) { return a.date.localeCompare(b.date); });
         if (activeDays.length === 0) return;
         var firstDay = activeDays[0].date;
         var lastDay = activeDays[activeDays.length - 1].date;
-        if (firstDay > period.since) events.push({ date: firstDay, type: 'resumed', icon: 'play_circle', color: 'blue', text: 'Campanha "' + c.name + '" retomou veiculacao', detail: 'Reativada em ' + formatDateBR(firstDay) });
-        if (lastDay < period.until) events.push({ date: lastDay, type: 'paused_mid', icon: 'pause', color: 'amber', text: 'Campanha "' + c.name + '" parou de gastar', detail: 'Ultimo dia ativo: ' + formatDateBR(lastDay) });
-        // Gaps no meio
-        var allDates = c.days.map(function(d) { return d.date; }).sort();
+
+        // Retomou (nao gastou nos primeiros dias do periodo)
+        if (firstDay > period.since) {
+            var daysOff = Math.round((new Date(firstDay) - new Date(period.since)) / 86400000);
+            events.push({ date: firstDay, type: 'resumed', icon: 'play_circle', color: 'blue', text: 'Campanha "' + c.name + '" retomou veiculacao apos ' + daysOff + ' dia(s) parada', detail: 'Reativada em ' + formatDateBR(firstDay) + ' | ' + getStatusBadge(m.status) });
+        }
+
+        // Parou no meio do periodo
+        if (lastDay < period.until) {
+            var daysInactive = Math.round((new Date(period.until) - new Date(lastDay)) / 86400000);
+            var reason = '';
+            if (m.status === 'PAUSED' || m.status === 'CAMPAIGN_PAUSED') reason = 'Campanha pausada manualmente';
+            else if (m.status === 'ACTIVE') reason = 'Campanha ativa mas sem entrega — verificar orcamento/aprovacao';
+            else reason = getStatusLabel(m.status);
+            events.push({ date: lastDay, type: 'paused_mid', icon: 'pause', color: 'amber', text: 'Campanha "' + c.name + '" parou de gastar — ' + daysInactive + ' dia(s) inativa' + statusInfo(id), detail: 'Ultimo gasto: ' + formatDateBR(lastDay) + ' | ' + reason });
+        }
+
+        // Gaps no meio (>=3 dias sem gasto)
         for (var gi = 1; gi < activeDays.length; gi++) {
             var prevDate = new Date(activeDays[gi - 1].date);
             var currDate = new Date(activeDays[gi].date);
             var gapDays = Math.round((currDate - prevDate) / 86400000);
-            if (gapDays >= 3) events.push({ date: activeDays[gi - 1].date, type: 'gap', icon: 'schedule', color: 'amber', text: 'Campanha "' + c.name + '" ficou ' + gapDays + ' dia(s) sem gastar', detail: 'De ' + formatDateBR(activeDays[gi - 1].date) + ' a ' + formatDateBR(activeDays[gi].date) });
+            if (gapDays >= 3) {
+                var gapReason = m.status === 'ACTIVE' ? 'Campanha ativa — gap pode indicar limite de orcamento atingido, problema de entrega ou pausa temporaria' : 'Status atual: ' + getStatusBadge(m.status);
+                events.push({ date: activeDays[gi - 1].date, type: 'gap', icon: 'schedule', color: 'amber', text: 'Campanha "' + c.name + '" ficou ' + gapDays + ' dia(s) sem gastar' + statusInfo(id), detail: 'De ' + formatDateBR(activeDays[gi - 1].date) + ' a ' + formatDateBR(activeDays[gi].date) + ' | ' + gapReason });
+            }
         }
     });
-    // Mudancas de orcamento
+
+    // Mudancas de orcamento (gasto medio diario)
     Object.keys(currentMap).forEach(function(id) {
         if (!prevMap[id]) return;
         var cDays = currentMap[id].days.filter(function(d) { return d.spend > 0; });
@@ -215,10 +299,12 @@ function buildTimeline(currentMap, prevMap, campaigns, period) {
         var pAvg = prevMap[id].totalSpend / pDays.length;
         if (pAvg === 0) return;
         var ratio = cAvg / pAvg;
-        if (ratio > 1.5) events.push({ date: period.since, type: 'budget_up', icon: 'trending_up', color: 'blue', text: 'Campanha "' + currentMap[id].name + '": gasto diario medio subiu ' + Math.round((ratio - 1) * 100) + '%', detail: 'De ' + fmtCur(pAvg) + '/dia para ' + fmtCur(cAvg) + '/dia' });
-        else if (ratio < 0.5) events.push({ date: period.since, type: 'budget_down', icon: 'trending_down', color: 'amber', text: 'Campanha "' + currentMap[id].name + '": gasto diario medio caiu ' + Math.round((1 - ratio) * 100) + '%', detail: 'De ' + fmtCur(pAvg) + '/dia para ' + fmtCur(cAvg) + '/dia' });
+        var bud = budgetInfo(id);
+        if (ratio > 1.5) events.push({ date: period.since, type: 'budget_up', icon: 'trending_up', color: 'blue', text: 'Campanha "' + currentMap[id].name + '": gasto medio subiu ' + Math.round((ratio - 1) * 100) + '%' + statusInfo(id), detail: 'De ' + fmtCur(pAvg) + '/dia para ' + fmtCur(cAvg) + '/dia' + (bud ? ' | ' + bud : '') });
+        else if (ratio < 0.5) events.push({ date: period.since, type: 'budget_down', icon: 'trending_down', color: 'amber', text: 'Campanha "' + currentMap[id].name + '": gasto medio caiu ' + Math.round((1 - ratio) * 100) + '%' + statusInfo(id), detail: 'De ' + fmtCur(pAvg) + '/dia para ' + fmtCur(cAvg) + '/dia' + (bud ? ' | ' + bud : '') });
     });
-    // Picos anormais
+
+    // Picos anormais na conta
     var dailyTotals = {};
     Object.values(currentMap).forEach(function(c) { c.days.forEach(function(d) { if (!dailyTotals[d.date]) dailyTotals[d.date] = 0; dailyTotals[d.date] += d.spend; }); });
     var dailyVals = Object.keys(dailyTotals).map(function(date) { return { date: date, spend: dailyTotals[date] }; });
@@ -459,9 +545,9 @@ function renderMacroAnalysis(data) {
     // Header
     html += '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
     html += '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">';
-    html += '<div><h2 class="text-lg font-bold text-white flex items-center gap-2"><span class="material-symbols-outlined text-amber-400">query_stats</span> Analise Macro</h2>';
+    html += '<div><h2 class="text-lg font-bold text-white flex items-center gap-2"><span class="material-symbols-outlined text-blue-400">query_stats</span> Analise Macro</h2>';
     html += '<p class="text-xs text-slate-500 mt-1">' + data.clientName + ' — ' + formatDateBR(p.since) + ' a ' + formatDateBR(p.until) + ' (comparado com ' + formatDateBR(data.prevPeriod.since) + ' a ' + formatDateBR(data.prevPeriod.until) + ')</p></div>';
-    html += '<button onclick="exportMacroAnalysisPDF()" class="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-bold transition-colors shrink-0">';
+    html += '<button onclick="exportMacroAnalysisPDF()" class="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-bold transition-colors shrink-0">';
     html += '<span class="material-symbols-outlined text-base">picture_as_pdf</span> Exportar PDF</button></div>';
 
     // KPIs
@@ -507,7 +593,7 @@ function renderOverviewHTML(ov) {
 
 function renderTimelineHTML(tl) {
     var h = '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
-    h += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-amber-400 text-base">timeline</span> Timeline de Mudancas</h3>';
+    h += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-blue-400 text-base">timeline</span> Timeline de Mudancas</h3>';
     h += '<div class="space-y-2">';
     tl.forEach(function(e) {
         var bg = 'bg-' + e.color + '-500/10'; var bc = 'border-' + e.color + '-500/10'; var tc = 'text-' + e.color + '-400';
@@ -523,7 +609,7 @@ function renderTimelineHTML(tl) {
 
 function renderPerformanceHTML(camps) {
     var h = '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
-    h += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-amber-400 text-base">leaderboard</span> Performance por Campanha</h3>';
+    h += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-blue-400 text-base">leaderboard</span> Performance por Campanha</h3>';
     if (camps.length === 0) { h += '<p class="text-sm text-slate-500">Nenhuma campanha com gasto no periodo.</p></div>'; return h; }
     h += '<div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-slate-500 border-b border-border-dark">';
     h += '<th class="text-left py-2 pr-3 font-semibold">Campanha</th>';
@@ -587,7 +673,7 @@ function renderLifecycleHTML(lc) {
 
 function renderCreativesHTML(cr) {
     var h = '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
-    h += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-amber-400 text-base">ads_click</span> Analise de Criativos</h3>';
+    h += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-blue-400 text-base">ads_click</span> Analise de Criativos</h3>';
     h += '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">';
     if (cr.top.length > 0) {
         h += '<div><h4 class="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-1"><span class="material-symbols-outlined text-xs">emoji_events</span> Melhores por Eficiencia</h4><div class="space-y-1.5">';
@@ -616,7 +702,7 @@ function renderCreativesHTML(cr) {
 
 function renderDiagnosticHTML(items) {
     var h = '<div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">';
-    h += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-amber-400 text-base">psychology</span> Diagnostico e Recomendacoes</h3>';
+    h += '<h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-blue-400 text-base">psychology</span> Diagnostico e Recomendacoes</h3>';
     h += '<div class="space-y-2">';
     items.forEach(function(it) {
         var cm = { success: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/10', warning: 'text-amber-400 bg-amber-500/10 border-amber-500/10', danger: 'text-red-400 bg-red-500/10 border-red-500/10', info: 'text-blue-400 bg-blue-500/10 border-blue-500/10' };
@@ -642,9 +728,9 @@ function exportMacroAnalysisPDF() {
     var W = 210, M = 15, CW = W - 2 * M;
     var y = 0;
 
-    // Cores (mesmo padrao do relatorio)
+    // Cores (mesmo padrao do relatorio principal)
     var colors = {
-        primary: [245, 158, 11],    // amber
+        primary: [19, 127, 236],
         dark: [15, 23, 42],
         text: [30, 41, 59],
         textLight: [100, 116, 139],
@@ -653,7 +739,7 @@ function exportMacroAnalysisPDF() {
         bgLight: [248, 250, 252],
         border: [226, 232, 240],
         white: [255, 255, 255],
-        blue: [59, 130, 246]
+        amber: [245, 158, 11]
     };
 
     function setColor(c) { doc.setTextColor(c[0], c[1], c[2]); }
@@ -749,7 +835,7 @@ function exportMacroAnalysisPDF() {
             checkPage(14);
             setFill(colors.bgLight); doc.roundedRect(M, y, CW, 10, 1, 1, 'F');
             // Indicador colorido
-            var eColor = e.color === 'emerald' ? colors.green : (e.color === 'red' ? colors.red : (e.color === 'blue' ? colors.blue : colors.primary));
+            var eColor = e.color === 'emerald' ? colors.green : (e.color === 'red' ? colors.red : (e.color === 'blue' ? colors.primary : colors.amber));
             setFill(eColor); doc.roundedRect(M + 1.5, y + 2, 1.2, 6, 0.5, 0.5, 'F');
             // Data
             doc.setFontSize(7); doc.setFont('helvetica', 'bold'); setColor(colors.textLight);
@@ -816,7 +902,7 @@ function exportMacroAnalysisPDF() {
         var blockH = 4 + lines.length * 3.5;
         checkPage(blockH + 3);
         setFill(colors.bgLight); doc.roundedRect(M, y, CW, blockH, 1, 1, 'F');
-        var iColor = item.type === 'success' ? colors.green : (item.type === 'danger' ? colors.red : (item.type === 'warning' ? colors.primary : colors.blue));
+        var iColor = item.type === 'success' ? colors.green : (item.type === 'danger' ? colors.red : (item.type === 'warning' ? colors.amber : colors.primary));
         setFill(iColor); doc.roundedRect(M + 1.5, y + 2, 1.2, blockH - 4, 0.5, 0.5, 'F');
         doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); setColor(colors.dark);
         doc.text(lines, M + 5, y + 5);
