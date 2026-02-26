@@ -305,14 +305,23 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 /* Melhorar touch targets */
 @media (max-width: 640px) {
-  /* Botões com área de toque maior */
-  button, a, select {
+  /* Botões com área de toque maior (exceto filtros compactos e tabs) */
+  button:not(.chart-filter-btn):not(.analysis-tab-btn):not(.board-sort-col),
+  a, select {
     min-height: 44px;
   }
 
   /* Inputs mais confortáveis */
   input, select {
     font-size: 16px !important; /* Previne zoom no iOS */
+  }
+
+  /* Textos de insights sem overflow */
+  #analysisContent,
+  #analysisContent p,
+  #analysisContent span {
+    word-break: break-word;
+    overflow-wrap: break-word;
   }
 
   /* Header mais compacto */

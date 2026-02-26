@@ -2004,6 +2004,11 @@ async function loadOverviewData() {
     // Reset acumuladores
     overviewMetricsAccum = { totalSpend: 0, totalLeads: 0, currencies: [] };
 
+    // No mobile, forçar view de cards (board tem min-w-[780px])
+    if (window.innerWidth < 768) {
+        setOverviewView('cards');
+    }
+
     // Limpar rows e cards existentes, resetar ordenacao
     rowsContainer.querySelectorAll('.overview-board-row').forEach(r => r.remove());
     const cardsEl = document.getElementById('overviewCards');
@@ -2809,7 +2814,7 @@ function switchAnalysisTab(tab) {
     const tabAnalyst = document.getElementById('tabAnalyst');
     const activeClass = 'bg-primary/10 text-white';
     const inactiveClass = 'text-slate-400 hover:text-white';
-    const base = 'flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-md transition-colors';
+    const base = 'analysis-tab-btn flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold rounded-md transition-colors flex-1 sm:flex-initial';
     tabCampaigns.className = `${base} ${tab === 'campaigns' ? activeClass : inactiveClass}`;
     tabCreatives.className = `${base} ${tab === 'creatives' ? activeClass : inactiveClass}`;
     tabAnalyst.className = `${base} ${tab === 'analyst' ? activeClass : inactiveClass}`;
@@ -3707,7 +3712,7 @@ function renderAnalystReport(analysisResult, cplTargets, campaigns, filterScope)
     let html = `
         <div class="analyst-report">
             <!-- Header: Health Ring + Title + PDF -->
-            <div class="flex items-start gap-4 mb-5">
+            <div class="flex flex-wrap sm:flex-nowrap items-start gap-3 sm:gap-4 mb-5
                 <div class="shrink-0 relative" title="Score de saude: ${healthScore}/100">
                     <svg width="72" height="72" viewBox="0 0 72 72" class="transform -rotate-90">
                         <circle cx="36" cy="36" r="${ringR}" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="5"/>
@@ -3729,9 +3734,9 @@ function renderAnalystReport(analysisResult, cplTargets, campaigns, filterScope)
                     </div>
                     <p class="text-[11px] text-slate-500 leading-relaxed">${campaigns.length} campanha(s) analisada(s) &middot; ${activeCampaigns.length} ativa(s) &middot; ${diagnostics.length} ponto(s) identificado(s)</p>
                 </div>
-                <button onclick="generateAnalystPDF()" class="shrink-0 flex items-center gap-1.5 px-3.5 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-xs font-semibold transition-all hover:scale-[1.02] active:scale-95">
+                <button onclick="generateAnalystPDF()" class="shrink-0 flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-[10px] sm:text-xs font-semibold transition-all hover:scale-[1.02] active:scale-95">
                     <span class="material-symbols-outlined text-sm">picture_as_pdf</span>
-                    Exportar PDF
+                    <span class="hidden sm:inline">Exportar</span> PDF
                 </button>
             </div>
 
