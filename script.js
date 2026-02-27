@@ -1688,111 +1688,249 @@ function updateFunnel(summary) {
 
     const { impressions, clicks, leads, spend } = summary;
 
-    // Se não há dados, mostrar placeholder
     if (!impressions || impressions === 0) {
-        container.innerHTML = `
-            <div id="funnelPlaceholder" class="flex flex-col items-center justify-center py-8 sm:py-12 text-slate-600">
-                <span class="material-symbols-outlined text-4xl sm:text-5xl mb-3 opacity-50">filter_alt</span>
-                <span class="text-xs sm:text-sm">Selecione um cliente para visualizar o funil</span>
-            </div>`;
+        resetFunnel();
         return;
     }
 
-    // Calcular taxas
+    // Taxas
     const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
     const convRate = clicks > 0 ? (leads / clicks) * 100 : 0;
     const cpl = leads > 0 ? spend / leads : 0;
+    const totalConv = impressions > 0 ? (leads / impressions) * 100 : 0;
 
-    // Proporções para largura dos trapézios (impressions = 100%)
-    const clicksRatio = impressions > 0 ? Math.max(0.25, clicks / impressions) : 0.5;
-    const leadsRatio = impressions > 0 ? Math.max(0.15, leads / impressions) : 0.25;
+    // Compactar números grandes
+    function shortNum(n) {
+        if (n >= 1000000) return (n / 1000000).toFixed(1).replace('.0', '') + 'M';
+        if (n >= 1000) return (n / 1000).toFixed(1).replace('.0', '') + 'K';
+        return formatNumber(n);
+    }
 
-    // Dimensões SVG
-    const W = 480, H = 300;
-    const centerX = W / 2;
-    const stageH = 58;
-    const gapH = 32;
-    const startY = 16;
+    // Stages data
+    const stages = [
+        { label: 'Impressoes', value: impressions, color: '#3b82f6', colorDim: 'rgba(59,130,246,', icon: 'visibility' },
+        { label: 'Cliques', value: clicks, color: '#06b6d4', colorDim: 'rgba(6,182,212,', icon: 'ads_click' },
+        { label: 'Leads', value: leads, color: '#10b981', colorDim: 'rgba(16,185,129,', icon: 'person_add' }
+    ];
 
-    // Larguras de cada estágio (topo e base do trapézio)
-    const s1TopW = W * 0.82;
-    const s1BotW = W * Math.max(0.45, clicksRatio * 0.85);
-    const s2TopW = s1BotW;
-    const s2BotW = W * Math.max(0.25, leadsRatio * 0.85);
-    const s3TopW = s2BotW;
-    const s3BotW = s3TopW * 0.7;
+    const rates = [
+        { label: 'CTR', value: ctr, color: '#60a5fa' },
+        { label: 'Conversao', value: convRate, color: '#34d399' }
+    ];
 
-    // Y positions
-    const s1Y = startY;
-    const arrow1Y = s1Y + stageH;
-    const s2Y = arrow1Y + gapH;
-    const arrow2Y = s2Y + stageH;
-    const s3Y = arrow2Y + gapH;
+    // -- Layout SVG: funil contínuo com curvas --
+    const W = 520, H = 340;
+    const cx = W / 2;
+    const funnelTop = 8;
+    const stageH = 76;
+    const connH = 20;
 
-    function trapezoid(topW, botW, y, h) {
-        const tl = centerX - topW / 2, tr = centerX + topW / 2;
-        const bl = centerX - botW / 2, br = centerX + botW / 2;
-        return `M${tl},${y} L${tr},${y} L${br},${y + h} L${bl},${y + h} Z`;
+    // Larguras proporcionais (min 22% para legibilidade)
+    const maxW = W * 0.88;
+    const clicksW = Math.max(W * 0.22, maxW * Math.min(1, clicks / Math.max(impressions, 1)));
+    const leadsW = Math.max(W * 0.14, maxW * Math.min(1, leads / Math.max(impressions, 1)));
+
+    const widths = [maxW, clicksW, leadsW];
+
+    // Gera path do funil inteiro com curvas suaves
+    function funnelPath() {
+        let d = '';
+        const r = 6; // raio das curvas
+        for (let i = 0; i < 3; i++) {
+            const y = funnelTop + i * (stageH + connH);
+            const w = widths[i];
+            const nextW = widths[i + 1] || w * 0.7;
+            const lx = cx - w / 2;
+            const rx = cx + w / 2;
+
+            if (i === 0) {
+                d += `M${lx + r},${y} L${rx - r},${y} Q${rx},${y} ${rx},${y + r}`;
+            }
+
+            const botY = y + stageH;
+            d += ` L${rx},${botY}`;
+
+            if (i < 2) {
+                // Curva de transição para o próximo estágio
+                const nextLx = cx - nextW / 2;
+                const nextRx = cx + nextW / 2;
+                const midY = botY + connH;
+                d += ` C${rx},${botY + connH * 0.5} ${nextRx},${midY - connH * 0.3} ${nextRx},${midY}`;
+            }
+        }
+
+        // Lado direito final → base → lado esquerdo sobe
+        const lastY = funnelTop + 2 * (stageH + connH) + stageH;
+        const lastW = widths[2] || leadsW;
+        const lastLx = cx - (lastW * 0.7) / 2;
+        const lastRx = cx + (lastW * 0.7) / 2;
+        d += ` Q${cx + lastW / 2},${lastY} ${lastRx},${lastY}`;
+        d += ` L${lastLx},${lastY}`;
+        d += ` Q${cx - lastW / 2},${lastY} ${cx - lastW / 2},${lastY}`;
+
+        // Subir pelo lado esquerdo
+        for (let i = 2; i >= 0; i--) {
+            const y = funnelTop + i * (stageH + connH);
+            const w = widths[i];
+            const lx = cx - w / 2;
+            const botY = y + stageH;
+
+            if (i < 2) {
+                const prevW = widths[i + 1] || w * 0.7;
+                const prevLx = cx - prevW / 2;
+                const midY = botY + connH;
+                d += ` C${prevLx},${midY - connH * 0.3} ${lx},${botY + connH * 0.5} ${lx},${botY}`;
+            } else {
+                d += ` L${lx},${botY}`;
+            }
+
+            d += ` L${lx},${y + r}`;
+            if (i === 0) {
+                d += ` Q${lx},${y} ${lx + r},${y}`;
+            }
+        }
+        d += ' Z';
+        return d;
+    }
+
+    // Separador horizontal entre estágios (clip-friendly)
+    function stageSeparator(stageIndex) {
+        const y = funnelTop + stageIndex * (stageH + connH);
+        const w = widths[stageIndex];
+        return { y: y, h: stageH, w: w };
     }
 
     const svg = `
-        <svg viewBox="0 0 ${W} ${H}" class="w-full" preserveAspectRatio="xMidYMid meet" style="max-height:320px">
+        <svg viewBox="0 0 ${W} ${H}" class="w-full funnel-svg" preserveAspectRatio="xMidYMid meet">
             <defs>
-                <linearGradient id="funnelGrad1" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="rgba(59,130,246,0.2)"/>
-                    <stop offset="100%" stop-color="rgba(59,130,246,0.08)"/>
-                </linearGradient>
-                <linearGradient id="funnelGrad2" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="rgba(6,182,212,0.2)"/>
-                    <stop offset="100%" stop-color="rgba(6,182,212,0.08)"/>
-                </linearGradient>
-                <linearGradient id="funnelGrad3" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="rgba(16,185,129,0.2)"/>
+                <!-- Gradiente principal do funil -->
+                <linearGradient id="funnelMainGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="rgba(59,130,246,0.18)"/>
+                    <stop offset="40%" stop-color="rgba(6,182,212,0.12)"/>
                     <stop offset="100%" stop-color="rgba(16,185,129,0.08)"/>
                 </linearGradient>
+                <linearGradient id="funnelStroke" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="rgba(59,130,246,0.4)"/>
+                    <stop offset="50%" stop-color="rgba(6,182,212,0.3)"/>
+                    <stop offset="100%" stop-color="rgba(16,185,129,0.35)"/>
+                </linearGradient>
+                <!-- Glow filter -->
+                <filter id="funnelGlow">
+                    <feGaussianBlur stdDeviation="8" result="blur"/>
+                    <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+                </filter>
+                <filter id="softGlow">
+                    <feGaussianBlur stdDeviation="18" result="blur"/>
+                    <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.5 0"/>
+                    <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+                </filter>
             </defs>
 
-            <!-- Stage 1: Impressões -->
-            <g class="funnel-stage" style="--delay:0">
-                <path d="${trapezoid(s1TopW, s1BotW, s1Y, stageH)}" fill="url(#funnelGrad1)" stroke="rgba(59,130,246,0.35)" stroke-width="1.5" rx="4"/>
-                <text x="${centerX}" y="${s1Y + stageH / 2 - 8}" text-anchor="middle" fill="rgba(148,163,184,0.8)" font-size="10" font-weight="600" letter-spacing="0.05em">IMPRESSOES</text>
-                <text x="${centerX}" y="${s1Y + stageH / 2 + 12}" text-anchor="middle" fill="white" font-size="18" font-weight="700">${formatNumber(impressions)}</text>
+            <!-- Background glow -->
+            <ellipse cx="${cx}" cy="${H * 0.45}" rx="${W * 0.3}" ry="${H * 0.35}" fill="rgba(59,130,246,0.04)" class="funnel-glow"/>
+
+            <!-- Funil shape -->
+            ${(() => {
+                // Simplificar: 3 retangulos com trapézios entre eles
+                let shapes = '';
+                for (let i = 0; i < 3; i++) {
+                    const s = stageSeparator(i);
+                    const y = s.y;
+                    const w = s.w;
+                    const h = s.h;
+                    const lx = cx - w / 2;
+                    const rx = cx + w / 2;
+                    const nextW = widths[i + 1] || w * 0.65;
+                    const nlx = cx - nextW / 2;
+                    const nrx = cx + nextW / 2;
+                    const r = 8;
+                    const c = stages[i];
+
+                    // Estágio (retângulo arredondado)
+                    shapes += `
+                        <g class="funnel-stage" style="--delay:${i * 2}">
+                            <rect x="${lx}" y="${y}" width="${w}" height="${h}" rx="${r}"
+                                fill="${c.colorDim}0.08)" stroke="${c.colorDim}0.25)" stroke-width="1"/>
+                            <rect x="${lx}" y="${y}" width="${w}" height="${h}" rx="${r}"
+                                fill="url(#funnelMainGrad)" opacity="0.3"/>
+                        </g>`;
+
+                    // Conector curvo
+                    if (i < 2) {
+                        const cy1 = y + h;
+                        const cy2 = cy1 + connH;
+                        shapes += `
+                        <g class="funnel-stage" style="--delay:${i * 2 + 1}">
+                            <path d="M${lx},${cy1} C${lx},${cy1 + connH * 0.7} ${nlx},${cy2 - connH * 0.3} ${nlx},${cy2}
+                                     L${nrx},${cy2} C${nrx},${cy2 - connH * 0.3} ${rx},${cy1 + connH * 0.7} ${rx},${cy1} Z"
+                                fill="${c.colorDim}0.05)" stroke="none"/>
+                        </g>`;
+                    }
+                }
+                return shapes;
+            })()}
+
+            <!-- Labels + Valores -->
+            ${stages.map((s, i) => {
+                const info = stageSeparator(i);
+                const y = info.y;
+                const h = info.h;
+                const midY = y + h / 2;
+                return `
+                <g class="funnel-stage" style="--delay:${i * 2}">
+                    <text x="${cx}" y="${midY - 12}" text-anchor="middle"
+                        fill="${s.colorDim}0.6)" font-size="9.5" font-weight="700"
+                        letter-spacing="0.12em" font-family="Inter, sans-serif">${s.label.toUpperCase()}</text>
+                    <text x="${cx}" y="${midY + 14}" text-anchor="middle"
+                        fill="white" font-size="22" font-weight="800"
+                        font-family="Inter, sans-serif">${shortNum(s.value)}</text>
+                    <text x="${cx}" y="${midY + 30}" text-anchor="middle"
+                        fill="rgba(148,163,184,0.5)" font-size="9"
+                        font-family="Inter, sans-serif">${formatNumber(s.value)}</text>
+                </g>`;
+            }).join('')}
+
+            <!-- Taxa entre estágios -->
+            ${rates.map((r, i) => {
+                const y1 = funnelTop + i * (stageH + connH) + stageH;
+                const midY = y1 + connH / 2;
+                const pillW = r.value >= 10 ? 80 : 72;
+                return `
+                <g class="funnel-stage" style="--delay:${i * 2 + 1}">
+                    <rect x="${cx - pillW / 2}" y="${midY - 9}" width="${pillW}" height="18" rx="9"
+                        fill="rgba(15,23,42,0.8)" stroke="${r.color}" stroke-width="1" opacity="0.9"/>
+                    <text x="${cx}" y="${midY + 4}" text-anchor="middle"
+                        fill="${r.color}" font-size="10" font-weight="700"
+                        font-family="Inter, sans-serif">${r.label} ${r.value.toFixed(1)}%</text>
+                </g>`;
+            }).join('')}
+
+            <!-- CPL no rodapé -->
+            <g class="funnel-stage" style="--delay:6">
+                ${(() => {
+                    const lastY = funnelTop + 2 * (stageH + connH) + stageH + 16;
+                    const cplText = leads > 0 ? formatCurrency(cpl) : '\u2014';
+                    const pillW = 130;
+                    return `
+                        <rect x="${cx - pillW / 2}" y="${lastY}" width="${pillW}" height="28" rx="14"
+                            fill="rgba(168,85,247,0.08)" stroke="rgba(168,85,247,0.25)" stroke-width="1"/>
+                        <text x="${cx}" y="${lastY + 18}" text-anchor="middle"
+                            fill="rgb(192,132,252)" font-size="12" font-weight="800"
+                            font-family="Inter, sans-serif">CPL ${cplText}</text>
+                    `;
+                })()}
             </g>
 
-            <!-- Arrow + CTR -->
-            <g class="funnel-stage" style="--delay:1">
-                <line x1="${centerX}" y1="${arrow1Y + 4}" x2="${centerX}" y2="${arrow1Y + gapH - 4}" stroke="rgba(100,116,139,0.3)" stroke-width="1.5" stroke-dasharray="4 3"/>
-                <polygon points="${centerX - 4},${arrow1Y + gapH - 8} ${centerX + 4},${arrow1Y + gapH - 8} ${centerX},${arrow1Y + gapH - 2}" fill="rgba(100,116,139,0.4)"/>
-                <rect x="${centerX + 12}" y="${arrow1Y + gapH / 2 - 10}" width="${ctr >= 10 ? 86 : 78}" height="20" rx="10" fill="rgba(59,130,246,0.1)" stroke="rgba(59,130,246,0.2)" stroke-width="1"/>
-                <text x="${centerX + 12 + (ctr >= 10 ? 43 : 39)}" y="${arrow1Y + gapH / 2 + 4}" text-anchor="middle" fill="rgb(96,165,250)" font-size="11" font-weight="700">CTR ${ctr.toFixed(1)}%</text>
-            </g>
-
-            <!-- Stage 2: Cliques -->
-            <g class="funnel-stage" style="--delay:2">
-                <path d="${trapezoid(s2TopW, s2BotW, s2Y, stageH)}" fill="url(#funnelGrad2)" stroke="rgba(6,182,212,0.35)" stroke-width="1.5" rx="4"/>
-                <text x="${centerX}" y="${s2Y + stageH / 2 - 8}" text-anchor="middle" fill="rgba(148,163,184,0.8)" font-size="10" font-weight="600" letter-spacing="0.05em">CLIQUES</text>
-                <text x="${centerX}" y="${s2Y + stageH / 2 + 12}" text-anchor="middle" fill="white" font-size="18" font-weight="700">${formatNumber(clicks)}</text>
-            </g>
-
-            <!-- Arrow + Conv Rate -->
-            <g class="funnel-stage" style="--delay:3">
-                <line x1="${centerX}" y1="${arrow2Y + 4}" x2="${centerX}" y2="${arrow2Y + gapH - 4}" stroke="rgba(100,116,139,0.3)" stroke-width="1.5" stroke-dasharray="4 3"/>
-                <polygon points="${centerX - 4},${arrow2Y + gapH - 8} ${centerX + 4},${arrow2Y + gapH - 8} ${centerX},${arrow2Y + gapH - 2}" fill="rgba(100,116,139,0.4)"/>
-                <rect x="${centerX + 12}" y="${arrow2Y + gapH / 2 - 10}" width="${convRate >= 10 ? 94 : 86}" height="20" rx="10" fill="rgba(16,185,129,0.1)" stroke="rgba(16,185,129,0.2)" stroke-width="1"/>
-                <text x="${centerX + 12 + (convRate >= 10 ? 47 : 43)}" y="${arrow2Y + gapH / 2 + 4}" text-anchor="middle" fill="rgb(52,211,153)" font-size="11" font-weight="700">Conv ${convRate.toFixed(1)}%</text>
-            </g>
-
-            <!-- Stage 3: Leads -->
-            <g class="funnel-stage" style="--delay:4">
-                <path d="${trapezoid(s3TopW, s3BotW, s3Y, stageH)}" fill="url(#funnelGrad3)" stroke="rgba(16,185,129,0.35)" stroke-width="1.5" rx="4"/>
-                <text x="${centerX}" y="${s3Y + stageH / 2 - 8}" text-anchor="middle" fill="rgba(148,163,184,0.8)" font-size="10" font-weight="600" letter-spacing="0.05em">LEADS</text>
-                <text x="${centerX}" y="${s3Y + stageH / 2 + 12}" text-anchor="middle" fill="white" font-size="18" font-weight="700">${formatNumber(leads)}</text>
-            </g>
-
-            <!-- CPL Badge -->
-            <g class="funnel-stage" style="--delay:5">
-                <rect x="${centerX - 60}" y="${s3Y + stageH + 12}" width="120" height="26" rx="13" fill="rgba(168,85,247,0.1)" stroke="rgba(168,85,247,0.25)" stroke-width="1"/>
-                <text x="${centerX}" y="${s3Y + stageH + 30}" text-anchor="middle" fill="rgb(192,132,252)" font-size="12" font-weight="700">CPL ${leads > 0 ? formatCurrency(cpl) : '—'}</text>
+            <!-- Taxa total (impressao→lead) -->
+            <g class="funnel-stage" style="--delay:7">
+                ${(() => {
+                    const lastY = funnelTop + 2 * (stageH + connH) + stageH + 52;
+                    return `
+                        <text x="${cx}" y="${lastY}" text-anchor="middle"
+                            fill="rgba(148,163,184,0.35)" font-size="9" font-weight="600"
+                            font-family="Inter, sans-serif">TAXA TOTAL DE CONVERSAO: ${totalConv.toFixed(2)}%</text>
+                    `;
+                })()}
             </g>
         </svg>`;
 
@@ -1803,8 +1941,8 @@ function resetFunnel() {
     const container = document.getElementById('funnelContainer');
     if (!container) return;
     container.innerHTML = `
-        <div id="funnelPlaceholder" class="flex flex-col items-center justify-center py-8 sm:py-12 text-slate-600">
-            <span class="material-symbols-outlined text-4xl sm:text-5xl mb-3 opacity-50">filter_alt</span>
+        <div id="funnelPlaceholder" class="flex flex-col items-center justify-center py-10 sm:py-14 text-slate-600">
+            <span class="material-symbols-outlined text-4xl sm:text-5xl mb-3 opacity-40">filter_alt</span>
             <span class="text-xs sm:text-sm">Selecione um cliente para visualizar o funil</span>
         </div>`;
 }
