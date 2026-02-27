@@ -1539,8 +1539,7 @@ function resetDashboard() {
     const platformBanner = document.getElementById('platformBanner');
     if (platformBanner) { platformBanner.classList.add('hidden'); platformBanner.classList.remove('flex'); }
 
-    // Limpar sparklines e donut
-    clearSparklines();
+    // Limpar donut
     hideDonutChart();
 
     // Limpar dados atuais
@@ -1652,16 +1651,6 @@ function updateDashboard(data) {
         } else {
             cplBadgeEl.classList.add('hidden');
         }
-    }
-
-    // Sparklines nos KPI cards
-    if (daily && daily.length > 1) {
-        renderSparkline('sparklineSpend', daily, 'spend', '#3b82f6');
-        renderSparkline('sparklineImpressions', daily, 'impressions', '#a855f7');
-        renderSparkline('sparklineLeads', daily, 'leads', '#f97316');
-        renderSparkline('sparklineCpl', daily, 'cpl', '#137fec');
-    } else {
-        clearSparklines();
     }
 
     // Donut de distribuição por campanha
@@ -2764,60 +2753,6 @@ function formatAxisNumber(value) {
     if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
     if (value >= 1000) return (value / 1000).toFixed(value % 1000 === 0 ? 0 : 1) + 'k';
     return String(Math.round(value));
-}
-
-// ==========================================
-// SPARKLINES (mini-gráficos nos KPI cards)
-// ==========================================
-
-function renderSparkline(containerId, dailyData, metric, color) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    if (!dailyData || dailyData.length < 2) {
-        container.innerHTML = '';
-        return;
-    }
-
-    const values = dailyData.map(d => d[metric] || 0);
-    const max = Math.max(...values);
-    const min = Math.min(...values);
-    const range = max - min || 1;
-
-    const w = 120;
-    const h = 32;
-    const pad = 2;
-    const chartW = w - pad * 2;
-    const chartH = h - pad * 2;
-
-    const points = values.map((v, i) => ({
-        x: pad + (i / (values.length - 1)) * chartW,
-        y: pad + chartH - ((v - min) / range) * chartH
-    }));
-
-    const linePath = buildSmoothPath(points);
-    const areaPath = linePath + ` L${points[points.length - 1].x},${h} L${points[0].x},${h} Z`;
-
-    const gradId = `sparkGrad_${metric}`;
-    container.innerHTML = `
-        <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" class="w-full h-full">
-            <defs>
-                <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="${color}" stop-opacity="0.2"/>
-                    <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
-                </linearGradient>
-            </defs>
-            <path d="${areaPath}" fill="url(#${gradId})"/>
-            <path d="${linePath}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-    `;
-}
-
-function clearSparklines() {
-    ['sparklineSpend', 'sparklineImpressions', 'sparklineLeads', 'sparklineCpl'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = '';
-    });
 }
 
 // ==========================================
