@@ -3771,7 +3771,7 @@ function renderAnalystReport(analysisResult, cplTargets, campaigns, filterScope)
     let html = `
         <div class="analyst-report">
             <!-- Header: Health Ring + Title + PDF -->
-            <div class="flex flex-wrap sm:flex-nowrap items-start gap-3 sm:gap-4 mb-5
+            <div class="flex flex-wrap sm:flex-nowrap items-start gap-3 sm:gap-4 mb-5">
                 <div class="shrink-0 relative" title="Score de saude: ${healthScore}/100">
                     <svg width="72" height="72" viewBox="0 0 72 72" class="transform -rotate-90">
                         <circle cx="36" cy="36" r="${ringR}" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="5"/>
