@@ -428,7 +428,7 @@ async function fetchInsights(accountId, accessToken, params) {
     if (leadCampaigns.length === 0) {
         return {
             data: {
-                summary: { spend: 0, impressions: 0, leads: 0, cpl: 0 },
+                summary: { spend: 0, impressions: 0, clicks: 0, leads: 0, cpl: 0 },
                 daily: [],
                 trends: { spend: 0, impressions: 0, leads: 0, cpl: 0 },
                 campaigns: []
@@ -532,6 +532,7 @@ function processInsightsDataV2(insightsTotals, insightsDaily, campaignConversion
     // Processar TOTAIS AGREGADOS (para KPIs precisos)
     let totalSpend = 0;
     let totalImpressions = 0;
+    let totalClicks = 0;
     let totalLeads = 0;
     const campaignMap = new Map();
 
@@ -542,11 +543,13 @@ function processInsightsDataV2(insightsTotals, insightsDaily, campaignConversion
         const campaignId = insight.campaign_id;
         const campaignName = insight.campaign_name;
         const spend = parseFloat(insight.spend || 0);
+        const clicks = parseInt(insight.clicks || 0);
         const conversionType = campaignConversionMap.get(campaignId) || 'form';
         const leads = countLeads(insight.actions, conversionType);
 
         totalSpend += spend;
         totalImpressions += impressions;
+        totalClicks += clicks;
         totalLeads += leads;
 
         // Agrupar por campanha
@@ -578,15 +581,17 @@ function processInsightsDataV2(insightsTotals, insightsDaily, campaignConversion
         const date = insight.date_start;
         const campaignId = insight.campaign_id;
         const spend = parseFloat(insight.spend || 0);
+        const clicks = parseInt(insight.clicks || 0);
         const conversionType = campaignConversionMap.get(campaignId) || 'form';
         const leads = countLeads(insight.actions, conversionType);
 
         if (!dailyMap.has(date)) {
-            dailyMap.set(date, { date, spend: 0, impressions: 0, leads: 0 });
+            dailyMap.set(date, { date, spend: 0, impressions: 0, clicks: 0, leads: 0 });
         }
         const dayData = dailyMap.get(date);
         dayData.spend += spend;
         dayData.impressions += impressions;
+        dayData.clicks += clicks;
         dayData.leads += leads;
     });
 
@@ -611,6 +616,7 @@ function processInsightsDataV2(insightsTotals, insightsDaily, campaignConversion
         summary: {
             spend: totalSpend,
             impressions: totalImpressions,
+            clicks: totalClicks,
             leads: totalLeads,
             cpl: totalCPL
         },

@@ -517,6 +517,32 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   -webkit-backdrop-filter: blur(8px);
 }
 
+/* ==========================================
+   FUNIL DE CONVERSÃO
+   ========================================== */
+
+.funnel-stage {
+  animation: funnelStageIn 0.5s ease-out backwards;
+  animation-delay: calc(var(--delay, 0) * 80ms + 100ms);
+}
+
+@keyframes funnelStageIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scaleY(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .funnel-stage {
+    animation: none;
+  }
+}
+
 /* Animação suave nos cards */
 .bg-surface-dark {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
