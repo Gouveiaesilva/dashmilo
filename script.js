@@ -819,9 +819,14 @@ function createClientHTML(client) {
             <span class="w-1 h-1 bg-emerald-400 rounded-full"></span>CPL
            </span>`
         : '';
+    const whatsappBadge = client.whatsappNumber
+        ? `<span class="inline-flex items-center gap-1 text-[10px] text-green-400/70 bg-green-400/5 px-1.5 py-0.5 rounded ml-1" title="${client.whatsappNumber}">
+            <span class="material-symbols-outlined" style="font-size:10px">chat</span>WhatsApp
+           </span>`
+        : '';
     const webhookBadge = client.googleChatWebhook
         ? `<span class="inline-flex items-center gap-1 text-[10px] text-primary/70 bg-primary/5 px-1.5 py-0.5 rounded ml-1">
-            <span class="material-symbols-outlined" style="font-size:10px">chat</span>Chat
+            <span class="material-symbols-outlined" style="font-size:10px">forum</span>Chat
            </span>`
         : '';
     return `
@@ -831,7 +836,7 @@ function createClientHTML(client) {
                     <span class="material-symbols-outlined">store</span>
                 </div>
                 <div class="min-w-0">
-                    <p class="text-sm font-medium text-white truncate">${client.name}${cplBadge}${webhookBadge}</p>
+                    <p class="text-sm font-medium text-white truncate">${client.name}${cplBadge}${whatsappBadge}${webhookBadge}</p>
                     <p class="text-xs text-slate-500 truncate font-mono">${client.adAccountId}</p>
                 </div>
             </div>
@@ -890,16 +895,18 @@ async function addClient(event) {
     let result;
 
     // Coletar campos opcionais
+    const whatsappNumber = document.getElementById('clientWhatsapp').value.trim() || null;
     const googleChatWebhook = document.getElementById('googleChatWebhook').value.trim() || null;
 
     if (editingClientId) {
         // Modo edição: atualizar cliente existente
-        const updates = { name: clientName, adAccountId: adAccountId, cplTargets: cplTargets, googleChatWebhook: googleChatWebhook };
+        const updates = { name: clientName, adAccountId: adAccountId, cplTargets: cplTargets, whatsappNumber: whatsappNumber, googleChatWebhook: googleChatWebhook };
         result = await updateClientAPI(editingClientId, updates, currentAdminPassword);
     } else {
         // Modo criação: adicionar novo cliente
         const clientData = { name: clientName, adAccountId: adAccountId };
         if (cplTargets) clientData.cplTargets = cplTargets;
+        if (whatsappNumber) clientData.whatsappNumber = whatsappNumber;
         if (googleChatWebhook) clientData.googleChatWebhook = googleChatWebhook;
         result = await addClientAPI(clientData, currentAdminPassword);
     }
@@ -928,6 +935,7 @@ async function addClient(event) {
         document.getElementById('cplBandsSection').classList.add('hidden');
         document.getElementById('cplBandsArrow').style.transform = '';
         document.getElementById('cplPreview').classList.add('hidden');
+        document.getElementById('clientWhatsapp').value = '';
         document.getElementById('googleChatWebhook').value = '';
 
         showToast(wasEditing ? 'Cliente atualizado com sucesso!' : 'Cliente adicionado com sucesso!');
@@ -983,6 +991,9 @@ async function editClient(clientId) {
         document.getElementById('cplWarning').value = '';
     }
 
+    // Preencher WhatsApp
+    document.getElementById('clientWhatsapp').value = client.whatsappNumber || '';
+
     // Preencher webhook
     document.getElementById('googleChatWebhook').value = client.googleChatWebhook || '';
 
@@ -1011,6 +1022,7 @@ function cancelEditClient() {
     document.getElementById('cplBandsSection').classList.add('hidden');
     document.getElementById('cplBandsArrow').style.transform = '';
     document.getElementById('cplPreview').classList.add('hidden');
+    document.getElementById('clientWhatsapp').value = '';
     document.getElementById('googleChatWebhook').value = '';
 
     updateFormMode();
@@ -1076,6 +1088,7 @@ let cachedCampaigns = [];
 let cachedAdsets = [];
 let currentAdAccountId = null;
 let currentCurrency = 'BRL';
+let lastMetricsSummary = null;
 
 // Popular o select de clientes no header
 async function populateClientFilter() {
@@ -1171,6 +1184,7 @@ function updateAdsManagerLink() {
             btnUploadCreative.classList.remove('hidden');
             btnUploadCreative.classList.add('flex');
         }
+        updateWhatsAppButton();
     } else {
         banner.classList.add('hidden');
         banner.classList.remove('flex');
@@ -1178,6 +1192,7 @@ function updateAdsManagerLink() {
             btnUploadCreative.classList.add('hidden');
             btnUploadCreative.classList.remove('flex');
         }
+        updateWhatsAppButton();
     }
 }
 
@@ -1610,6 +1625,7 @@ function updateDashboard(data) {
     if (!data || !data.summary) return;
 
     const { summary, trends, daily } = data;
+    lastMetricsSummary = summary;
 
     // Atualizar cards
     updateMetricCard('spend', summary.spend, trends.spend, formatCurrency);
@@ -1636,7 +1652,7 @@ function updateDashboard(data) {
 
     // Atualizar gráfico
     if (daily && daily.length > 0) {
-        updateChart(daily, 'spend');
+        updateChart(daily, 'cpl');
     }
 
     // Mostrar barra de abas
@@ -1922,6 +1938,386 @@ async function submitUploadCreative() {
         btnText.textContent = 'Enviar para a Conta';
         btnSpinner.classList.add('hidden');
         btn.disabled = false;
+    }
+}
+
+// ==========================================
+// WHATSAPP — PAINEL + ENVIO
+// ==========================================
+
+let waQrPollingInterval = null;
+let waQrCountdownInterval = null;
+
+async function callWhatsAppAPI(action, data = {}) {
+    const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
+    const password = sessionStorage.getItem('adminPassword') || '';
+    const resp = await fetch(`${baseUrl}/.netlify/functions/whatsapp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, password, ...data })
+    });
+    const result = await resp.json();
+    if (!resp.ok || result.error) throw new Error(result.error || 'Erro na API WhatsApp');
+    return result;
+}
+
+async function loadWhatsAppStatus() {
+    const loading = document.getElementById('waStatusLoading');
+    const connected = document.getElementById('waStatusConnected');
+    const disconnected = document.getElementById('waStatusDisconnected');
+    const errorEl = document.getElementById('waStatusError');
+    const qrSection = document.getElementById('waQrCodeSection');
+
+    if (!loading) return;
+
+    // Carregar configuracoes salvas nos campos
+    await loadWhatsAppConfig();
+
+    loading.classList.remove('hidden');
+    connected.classList.add('hidden');
+    disconnected.classList.add('hidden');
+    errorEl.classList.add('hidden');
+
+    try {
+        const result = await callWhatsAppAPI('test-connection');
+        loading.classList.add('hidden');
+
+        if (result.connected) {
+            connected.classList.remove('hidden');
+            document.getElementById('waInstanceName').textContent = result.instance || '—';
+            if (qrSection) qrSection.classList.add('hidden');
+            stopQrPolling();
+        } else {
+            disconnected.classList.remove('hidden');
+        }
+    } catch (err) {
+        loading.classList.add('hidden');
+        errorEl.classList.remove('hidden');
+        document.getElementById('waStatusErrorMsg').textContent = err.message;
+    }
+}
+
+async function loadWhatsAppConfig() {
+    try {
+        const result = await callWhatsAppAPI('get-config');
+        if (result.config) {
+            document.getElementById('waConfigUrl').value = result.config.apiUrl || '';
+            document.getElementById('waConfigInstance').value = result.config.instanceName || 'dashboard-milo';
+            // Chave: mostrar placeholder se existe
+            const keyInput = document.getElementById('waConfigKey');
+            if (result.config.hasApiKey) {
+                keyInput.placeholder = '••••••••  (chave salva)';
+            }
+            // Status
+            const statusEl = document.getElementById('waConfigStatus');
+            if (result.config.apiUrl) {
+                statusEl.innerHTML = '<span class="text-green-400 flex items-center gap-1"><span class="material-symbols-outlined text-sm">check_circle</span> Configurado</span>';
+            } else {
+                statusEl.innerHTML = '<span class="text-amber-400 flex items-center gap-1"><span class="material-symbols-outlined text-sm">warning</span> Nao configurado</span>';
+            }
+        }
+    } catch (err) {
+        // Se falhar, campos ficam vazios — normal na primeira vez
+        const statusEl = document.getElementById('waConfigStatus');
+        if (statusEl) statusEl.innerHTML = '<span class="text-slate-500">Preencha os campos abaixo</span>';
+    }
+}
+
+async function saveWhatsAppConfig() {
+    const apiUrl = document.getElementById('waConfigUrl').value.trim();
+    const apiKey = document.getElementById('waConfigKey').value.trim();
+    const instanceName = document.getElementById('waConfigInstance').value.trim();
+    const btn = document.getElementById('waConfigSaveBtn');
+    const statusEl = document.getElementById('waConfigStatus');
+
+    if (!apiUrl) {
+        showToast('Informe a URL da Evolution API', 'error');
+        return;
+    }
+
+    // Se chave esta vazia e ja tem uma salva, nao exigir nova
+    if (!apiKey) {
+        // Verificar se ja tem chave salva
+        try {
+            const configResult = await callWhatsAppAPI('get-config');
+            if (!configResult.config?.hasApiKey) {
+                showToast('Informe a Chave da API', 'error');
+                return;
+            }
+        } catch (e) {
+            showToast('Informe a Chave da API', 'error');
+            return;
+        }
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Salvando...';
+
+    try {
+        const data = { apiUrl, instanceName: instanceName || 'dashboard-milo' };
+        if (apiKey) data.apiKey = apiKey;
+
+        await callWhatsAppAPI('save-config', data);
+
+        statusEl.innerHTML = '<span class="text-green-400 flex items-center gap-1"><span class="material-symbols-outlined text-sm">check_circle</span> Salvo!</span>';
+        showToast('Configuracoes salvas com sucesso!', 'success');
+
+        // Limpar campo de chave e atualizar placeholder
+        document.getElementById('waConfigKey').value = '';
+        document.getElementById('waConfigKey').placeholder = '••••••••  (chave salva)';
+
+        // Recarregar status
+        setTimeout(() => loadWhatsAppStatus(), 500);
+    } catch (err) {
+        statusEl.innerHTML = `<span class="text-red-400">${err.message}</span>`;
+        showToast('Erro ao salvar: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined text-lg">save</span> Salvar Configuracoes';
+    }
+}
+
+function toggleWaKeyVisibility() {
+    const input = document.getElementById('waConfigKey');
+    const icon = document.getElementById('waKeyToggleIcon');
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.textContent = 'visibility_off';
+    } else {
+        input.type = 'password';
+        icon.textContent = 'visibility';
+    }
+}
+
+async function connectWhatsApp() {
+    const qrSection = document.getElementById('waQrCodeSection');
+    qrSection.classList.remove('hidden');
+    await refreshQrCode();
+
+    // Polling para detectar conexao
+    stopQrPolling();
+    waQrPollingInterval = setInterval(async () => {
+        try {
+            const result = await callWhatsAppAPI('test-connection');
+            if (result.connected) {
+                stopQrPolling();
+                qrSection.classList.add('hidden');
+                showToast('WhatsApp conectado com sucesso!', 'success');
+                loadWhatsAppStatus();
+            }
+        } catch (e) { /* ignora erros durante polling */ }
+    }, 3000);
+}
+
+async function refreshQrCode() {
+    const container = document.getElementById('waQrCodeContainer');
+    container.innerHTML = '<div class="w-8 h-8 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"></div>';
+
+    try {
+        const result = await callWhatsAppAPI('get-qrcode');
+        if (result.qrcode) {
+            container.innerHTML = `<img src="${result.qrcode}" alt="QR Code" class="w-48 h-48" style="image-rendering: pixelated;">`;
+        } else {
+            container.innerHTML = '<p class="text-xs text-slate-500 text-center">QR code nao disponivel.<br>Tente novamente.</p>';
+        }
+    } catch (err) {
+        container.innerHTML = `<p class="text-xs text-red-400 text-center">${err.message}</p>`;
+    }
+
+    // Countdown
+    startQrCountdown(45);
+}
+
+function startQrCountdown(seconds) {
+    const timerEl = document.getElementById('waQrTimer');
+    if (!timerEl) return;
+    clearInterval(waQrCountdownInterval);
+
+    let remaining = seconds;
+    timerEl.textContent = `${remaining}s`;
+
+    waQrCountdownInterval = setInterval(() => {
+        remaining--;
+        timerEl.textContent = `${remaining}s`;
+        if (remaining <= 0) {
+            clearInterval(waQrCountdownInterval);
+            timerEl.textContent = 'Expirado';
+        }
+    }, 1000);
+}
+
+function stopQrPolling() {
+    if (waQrPollingInterval) { clearInterval(waQrPollingInterval); waQrPollingInterval = null; }
+    if (waQrCountdownInterval) { clearInterval(waQrCountdownInterval); waQrCountdownInterval = null; }
+}
+
+async function disconnectWhatsApp() {
+    if (!confirm('Deseja desconectar o WhatsApp?')) return;
+
+    try {
+        await callWhatsAppAPI('logout-instance');
+        showToast('WhatsApp desconectado', 'info');
+        loadWhatsAppStatus();
+    } catch (err) {
+        showToast('Erro ao desconectar: ' + err.message, 'error');
+    }
+}
+
+async function sendWhatsAppTest() {
+    const number = document.getElementById('waTestNumber').value.trim();
+    const message = document.getElementById('waTestMessage').value.trim();
+    const btn = document.getElementById('waTestSendBtn');
+    const resultEl = document.getElementById('waTestResult');
+
+    if (!number || number.length < 12) {
+        showToast('Informe um numero valido (ex: 5511999999999)', 'error');
+        return;
+    }
+    if (!message) {
+        showToast('Informe uma mensagem', 'error');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Enviando...';
+
+    try {
+        await callWhatsAppAPI('send-text', { number, text: message });
+        resultEl.classList.remove('hidden');
+        resultEl.className = 'text-sm text-green-400';
+        resultEl.textContent = 'Mensagem enviada com sucesso!';
+        showToast('Mensagem de teste enviada!', 'success');
+    } catch (err) {
+        resultEl.classList.remove('hidden');
+        resultEl.className = 'text-sm text-red-400';
+        resultEl.textContent = err.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined text-lg">send</span> Enviar Mensagem de Teste';
+    }
+}
+
+// --- Envio de relatorio via WhatsApp ---
+
+function openWhatsAppSendModal() {
+    const clientFilter = document.getElementById('clientFilter');
+    if (!clientFilter || !clientFilter.value) {
+        showToast('Selecione um cliente primeiro', 'error');
+        return;
+    }
+
+    const client = clientsCache.find(c => c.id === clientFilter.value);
+    if (!client || !client.whatsappNumber) {
+        showToast('Este cliente nao tem WhatsApp cadastrado', 'error');
+        return;
+    }
+
+    // Preencher modal
+    document.getElementById('waSendClientName').textContent = client.name;
+    const num = client.whatsappNumber;
+    document.getElementById('waSendClientNumber').textContent = `+${num.slice(0,2)} ${num.slice(2,4)} ${num.slice(4,9)}-${num.slice(9)}`;
+
+    // Periodo atual
+    const dateRange = getDateRangeForAPI();
+    if (dateRange) {
+        document.getElementById('waSendPeriod').textContent = `${formatDateForDisplay(dateRange.since)} a ${formatDateForDisplay(dateRange.until)}`;
+    }
+
+    // Reset radio
+    const radios = document.querySelectorAll('input[name="waSendType"]');
+    if (radios.length) radios[0].checked = true;
+
+    const modal = document.getElementById('whatsappSendModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeWhatsAppSendModal() {
+    const modal = document.getElementById('whatsappSendModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+async function sendWhatsAppReport() {
+    const clientFilter = document.getElementById('clientFilter');
+    const client = clientsCache.find(c => c.id === clientFilter.value);
+    if (!client || !client.whatsappNumber) return;
+
+    const sendType = document.querySelector('input[name="waSendType"]:checked')?.value || 'text';
+    const btn = document.getElementById('waSendBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Enviando...';
+
+    try {
+        // Coletar metricas do painel atual
+        if (!lastMetricsSummary) {
+            throw new Error('Nenhuma metrica carregada. Selecione um cliente e periodo primeiro.');
+        }
+        const spend = lastMetricsSummary.spend || 0;
+        const impressions = lastMetricsSummary.impressions || 0;
+        const clicks = lastMetricsSummary.clicks || 0;
+        const leads = lastMetricsSummary.leads || 0;
+        const cpl = lastMetricsSummary.cpl || 0;
+
+        const dateRange = getDateRangeForAPI();
+        const period = dateRange ? {
+            start: formatDateForDisplay(dateRange.since),
+            end: formatDateForDisplay(dateRange.until)
+        } : {};
+
+        // Enviar resumo em texto
+        await callWhatsAppAPI('send-report', {
+            number: client.whatsappNumber,
+            clientName: client.name,
+            metrics: { spend, impressions, clicks, leads, cpl },
+            period
+        });
+
+        // Se PDF, enviar tambem
+        if (sendType === 'pdf' && typeof buildReportPDF === 'function') {
+            try {
+                const pdfData = await buildReportPDF();
+                if (pdfData) {
+                    await callWhatsAppAPI('send-media', {
+                        number: client.whatsappNumber,
+                        mediaBase64: pdfData,
+                        fileName: `[MILO][${client.name}][RELATORIO].pdf`,
+                        caption: `Relatorio ${client.name}`
+                    });
+                }
+            } catch (pdfErr) {
+                console.warn('Erro ao enviar PDF:', pdfErr);
+            }
+        }
+
+        showToast(`Relatorio enviado para ${client.name}!`, 'success');
+        closeWhatsAppSendModal();
+    } catch (err) {
+        showToast('Erro ao enviar: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined text-lg">send</span> Enviar WhatsApp';
+    }
+}
+
+function updateWhatsAppButton() {
+    const btn = document.getElementById('btnSendWhatsApp');
+    if (!btn) return;
+
+    const clientFilter = document.getElementById('clientFilter');
+    if (!clientFilter || !clientFilter.value || !isCurrentUserAdmin()) {
+        btn.classList.add('hidden');
+        btn.classList.remove('flex');
+        return;
+    }
+
+    const client = clientsCache.find(c => c.id === clientFilter.value);
+    if (client && client.whatsappNumber) {
+        btn.classList.remove('hidden');
+        btn.classList.add('flex');
+    } else {
+        btn.classList.add('hidden');
+        btn.classList.remove('flex');
     }
 }
 
@@ -2359,27 +2755,37 @@ function switchPanel(panel) {
     const panelVisaoGeral = document.getElementById('panelVisaoGeral');
     const panelMetricas = document.getElementById('panelMetricas');
     const panelRelatorios = document.getElementById('panelRelatorios');
+    const panelWhatsApp = document.getElementById('panelWhatsApp');
     const headerVisaoGeral = document.getElementById('headerVisaoGeral');
     const headerMetricas = document.getElementById('headerMetricas');
     const headerRelatorios = document.getElementById('headerRelatorios');
+    const headerWhatsApp = document.getElementById('headerWhatsApp');
     const navVisaoGeral = document.getElementById('navVisaoGeral');
     const navMetricas = document.getElementById('navMetricas');
     const navRelatorios = document.getElementById('navRelatorios');
+    const navWhatsApp = document.getElementById('navWhatsApp');
 
     // Esconder todos os paineis e headers
     panelVisaoGeral.classList.add('hidden');
     panelMetricas.classList.add('hidden');
     panelRelatorios.classList.add('hidden');
+    if (panelWhatsApp) panelWhatsApp.classList.add('hidden');
     headerVisaoGeral.classList.add('hidden');
     headerMetricas.classList.add('hidden');
     headerRelatorios.classList.add('hidden');
+    if (headerWhatsApp) headerWhatsApp.classList.add('hidden');
 
     // Resetar todos os navs
-    [navVisaoGeral, navMetricas, navRelatorios].forEach(nav => {
+    [navVisaoGeral, navMetricas, navRelatorios].filter(Boolean).forEach(nav => {
         nav.classList.remove('sidebar-item-active');
         nav.classList.add('text-slate-400', 'hover:text-white');
         nav.querySelector('.material-symbols-outlined').style.fontVariationSettings = '';
     });
+    if (navWhatsApp) {
+        navWhatsApp.classList.remove('sidebar-item-active');
+        navWhatsApp.classList.add('text-slate-400', 'hover:text-white');
+        navWhatsApp.querySelector('.material-symbols-outlined').style.fontVariationSettings = '';
+    }
 
     // Ativar o painel selecionado
     if (panel === 'visao-geral') {
@@ -2406,6 +2812,15 @@ function switchPanel(panel) {
             populateReportClientFilter();
         }
         populateScheduleClientFilter();
+    } else if (panel === 'whatsapp') {
+        if (panelWhatsApp) panelWhatsApp.classList.remove('hidden');
+        if (headerWhatsApp) headerWhatsApp.classList.remove('hidden');
+        if (navWhatsApp) {
+            navWhatsApp.classList.add('sidebar-item-active');
+            navWhatsApp.classList.remove('text-slate-400', 'hover:text-white');
+            navWhatsApp.querySelector('.material-symbols-outlined').style.fontVariationSettings = "'FILL' 1";
+        }
+        loadWhatsAppStatus();
     }
 
     // Fechar sidebar no mobile
