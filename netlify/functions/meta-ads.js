@@ -35,7 +35,7 @@ exports.handler = async (event, context) => {
         const params = event.queryStringParameters || {};
         const { adAccountId, action, campaignId, adsetId, datePreset, timeRange } = params;
 
-        if (!adAccountId && action !== 'account-status') {
+        if (!adAccountId && !['account-status', 'facebook-pages', 'search-interests'].includes(action)) {
             return {
                 statusCode: 400,
                 headers,
@@ -124,6 +124,22 @@ exports.handler = async (event, context) => {
                     return { statusCode: 400, headers, body: JSON.stringify({ error: 'adId é obrigatório' }) };
                 }
                 result = await fetchAdDailyInsights(formattedAccountId, targetAdId, accessToken, params);
+                break;
+            }
+
+            case 'facebook-pages': {
+                // Listar páginas do Facebook vinculadas ao token
+                result = await fetchFacebookPages(accessToken);
+                break;
+            }
+
+            case 'search-interests': {
+                // Buscar interesses para targeting
+                const { q } = params;
+                if (!q) {
+                    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Parâmetro q é obrigatório' }) };
+                }
+                result = await searchTargetingInterests(q, accessToken);
                 break;
             }
 
@@ -1245,5 +1261,44 @@ async function fetchMacroAnalysis(accountId, accessToken, params) {
         currentDaily,
         prevDaily,
         ads: currentAdsData.data || []
+    };
+}
+
+// ==========================================
+// BUSCAR PÁGINAS DO FACEBOOK
+// ==========================================
+async function fetchFacebookPages(accessToken) {
+    const url = `${META_API_BASE}/me/accounts?fields=id,name,picture{url}&access_token=${accessToken}&limit=100`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.error) throw new Error(data.error.message);
+
+    return {
+        pages: (data.data || []).map(p => ({
+            id: p.id,
+            name: p.name,
+            pictureUrl: p.picture && p.picture.data ? p.picture.data.url : null
+        }))
+    };
+}
+
+// ==========================================
+// BUSCAR INTERESSES PARA TARGETING
+// ==========================================
+async function searchTargetingInterests(query, accessToken) {
+    const url = `${META_API_BASE}/search?type=adinterest&q=${encodeURIComponent(query)}&access_token=${accessToken}&limit=15`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.error) throw new Error(data.error.message);
+
+    return {
+        interests: (data.data || []).map(i => ({
+            id: i.id,
+            name: i.name,
+            audienceSize: i.audience_size || null,
+            path: i.path || []
+        }))
     };
 }

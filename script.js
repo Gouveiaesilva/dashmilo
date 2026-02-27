@@ -1160,14 +1160,24 @@ function updateAdsManagerLink() {
     const select = document.getElementById('clientFilter');
     if (!select.value) { banner.classList.add('hidden'); banner.classList.remove('flex'); return; }
     const client = clientsCache.find(c => c.id === select.value);
+    const btnUploadCreative = document.getElementById('btnUploadCreative');
     if (client && client.adAccountId) {
         const actId = client.adAccountId.replace(/^act_/, '');
         link.href = 'https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=' + actId;
         banner.classList.remove('hidden');
         banner.classList.add('flex');
+        // Mostrar botão Nova Campanha para admins
+        if (btnUploadCreative && isCurrentUserAdmin()) {
+            btnUploadCreative.classList.remove('hidden');
+            btnUploadCreative.classList.add('flex');
+        }
     } else {
         banner.classList.add('hidden');
         banner.classList.remove('flex');
+        if (btnUploadCreative) {
+            btnUploadCreative.classList.add('hidden');
+            btnUploadCreative.classList.remove('flex');
+        }
     }
 }
 
@@ -1679,6 +1689,243 @@ function formatNumber(value) {
 }
 
 // ==========================================
+// UPLOAD DE CRIATIVO
+// ==========================================
+
+let ucMediaFile = null;
+let ucMediaType = null; // 'IMAGE' ou 'VIDEO'
+let ucMediaBase64 = null;
+
+function openUploadCreativeModal() {
+    const clientFilter = document.getElementById('clientFilter');
+    if (!clientFilter || !clientFilter.value) {
+        showToast('Selecione um cliente primeiro', 'warning');
+        return;
+    }
+
+    // Resetar
+    ucMediaFile = null;
+    ucMediaType = null;
+    ucMediaBase64 = null;
+    clearUcMedia();
+
+    // Mostrar nome da conta
+    const client = clientsCache.find(c => c.id === clientFilter.value);
+    const accountLabel = document.getElementById('uploadCreativeAccount');
+    if (accountLabel && client) {
+        accountLabel.textContent = `Conta: ${client.name} (${client.adAccountId})`;
+    }
+
+    // Esconder mensagens
+    document.getElementById('ucError').classList.add('hidden');
+    document.getElementById('ucSuccess').classList.add('hidden');
+
+    // Abrir modal
+    const modal = document.getElementById('uploadCreativeModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeUploadCreativeModal() {
+    const modal = document.getElementById('uploadCreativeModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+// --- Drag & drop e seleção de arquivo ---
+function handleUcDrop(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('border-emerald-500', 'bg-emerald-500/5');
+    const file = e.dataTransfer.files[0];
+    if (file) handleUcFileSelect(file);
+}
+
+function handleUcFileSelect(file) {
+    if (!file) return;
+
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+
+    if (!isImage && !isVideo) {
+        showUcError('Formato nao suportado. Use JPG, PNG, MP4 ou MOV.');
+        return;
+    }
+    if (isImage && file.size > 30 * 1024 * 1024) {
+        showUcError('Imagem muito grande. Maximo: 30MB.');
+        return;
+    }
+    if (isVideo && file.size > 500 * 1024 * 1024) {
+        showUcError('Video muito grande. Maximo: 500MB.');
+        return;
+    }
+
+    ucMediaFile = file;
+    ucMediaType = isImage ? 'IMAGE' : 'VIDEO';
+
+    // Show preview
+    document.getElementById('ucPlaceholder').classList.add('hidden');
+    document.getElementById('ucPreview').classList.remove('hidden');
+    document.getElementById('ucFileName').textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`;
+    document.getElementById('ucError').classList.add('hidden');
+
+    if (isImage) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            document.getElementById('ucPreviewImg').src = e.target.result;
+            document.getElementById('ucPreviewImg').classList.remove('hidden');
+            ucMediaBase64 = e.target.result.split(',')[1];
+        };
+        reader.readAsDataURL(file);
+        document.getElementById('ucPreviewVid').classList.add('hidden');
+    } else {
+        const url = URL.createObjectURL(file);
+        document.getElementById('ucPreviewVid').src = url;
+        document.getElementById('ucPreviewVid').classList.remove('hidden');
+        document.getElementById('ucPreviewImg').classList.add('hidden');
+        ucMediaBase64 = null;
+    }
+}
+
+function clearUcMedia() {
+    ucMediaFile = null;
+    ucMediaType = null;
+    ucMediaBase64 = null;
+    const fileInput = document.getElementById('ucFileInput');
+    if (fileInput) fileInput.value = '';
+    const placeholder = document.getElementById('ucPlaceholder');
+    if (placeholder) placeholder.classList.remove('hidden');
+    const preview = document.getElementById('ucPreview');
+    if (preview) preview.classList.add('hidden');
+    const img = document.getElementById('ucPreviewImg');
+    if (img) img.classList.add('hidden');
+    const vid = document.getElementById('ucPreviewVid');
+    if (vid) vid.classList.add('hidden');
+    const progress = document.getElementById('ucProgress');
+    if (progress) progress.classList.add('hidden');
+}
+
+function showUcError(msg) {
+    const el = document.getElementById('ucError');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+}
+
+// --- Upload chunked de vídeo ---
+async function uploadVideoToAccount(file, adAccountId) {
+    const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
+    const CHUNK_SIZE = 3 * 1024 * 1024;
+
+    const startResp = await fetch(`${baseUrl}/.netlify/functions/meta-ads-write`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'upload-video-chunk', password: currentAdminPassword, adAccountId, phase: 'start', fileSize: file.size })
+    });
+    const startData = await startResp.json();
+    if (!startData.success) throw new Error(startData.error || 'Falha ao iniciar upload');
+
+    const { uploadSessionId } = startData;
+    let offset = 0;
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    let chunksSent = 0;
+
+    document.getElementById('ucProgress').classList.remove('hidden');
+
+    while (offset < file.size) {
+        const end = Math.min(offset + CHUNK_SIZE, file.size);
+        const chunk = file.slice(offset, end);
+        const base64 = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.readAsDataURL(chunk);
+        });
+
+        const transferResp = await fetch(`${baseUrl}/.netlify/functions/meta-ads-write`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'upload-video-chunk', password: currentAdminPassword, adAccountId, phase: 'transfer', uploadSessionId, startOffset: offset, videoData: base64 })
+        });
+        const transferData = await transferResp.json();
+        if (!transferData.success) throw new Error(transferData.error || 'Falha ao enviar chunk');
+
+        chunksSent++;
+        const pct = Math.round((chunksSent / totalChunks) * 100);
+        document.getElementById('ucProgressBar').style.width = `${pct}%`;
+        document.getElementById('ucProgressText').textContent = `Enviando video... ${pct}%`;
+        offset = end;
+    }
+
+    const finishResp = await fetch(`${baseUrl}/.netlify/functions/meta-ads-write`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'upload-video-chunk', password: currentAdminPassword, adAccountId, phase: 'finish', uploadSessionId })
+    });
+    const finishData = await finishResp.json();
+    if (!finishData.success) throw new Error(finishData.error || 'Falha ao finalizar upload');
+
+    document.getElementById('ucProgressText').textContent = 'Video enviado!';
+    return finishData.videoId;
+}
+
+// --- Submit upload ---
+async function submitUploadCreative() {
+    if (!ucMediaFile) return showUcError('Selecione uma imagem ou video');
+
+    const btnText = document.getElementById('ucBtnText');
+    const btnSpinner = document.getElementById('ucBtnSpinner');
+    const btn = document.getElementById('ucBtnSubmit');
+    btnText.textContent = 'Enviando...';
+    btnSpinner.classList.remove('hidden');
+    btn.disabled = true;
+    document.getElementById('ucError').classList.add('hidden');
+    document.getElementById('ucSuccess').classList.add('hidden');
+
+    try {
+        const clientFilter = document.getElementById('clientFilter');
+        const client = clientsCache.find(c => c.id === clientFilter.value);
+        if (!client) throw new Error('Cliente nao encontrado');
+
+        const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
+
+        if (ucMediaType === 'IMAGE') {
+            // Upload de imagem via meta-ads-write
+            const resp = await fetch(`${baseUrl}/.netlify/functions/meta-ads-write`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'upload-image',
+                    password: currentAdminPassword,
+                    adAccountId: client.adAccountId,
+                    imageData: ucMediaBase64
+                })
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Erro ao enviar imagem');
+
+            const successEl = document.getElementById('ucSuccess');
+            successEl.textContent = `Imagem enviada com sucesso! Hash: ${data.imageHash}`;
+            successEl.classList.remove('hidden');
+        } else {
+            // Upload de vídeo chunked
+            const videoId = await uploadVideoToAccount(ucMediaFile, client.adAccountId);
+
+            const successEl = document.getElementById('ucSuccess');
+            successEl.textContent = `Video enviado com sucesso! ID: ${videoId}`;
+            successEl.classList.remove('hidden');
+        }
+
+        showToast('Criativo enviado para a conta de anuncios!', 'success');
+        setTimeout(() => closeUploadCreativeModal(), 3000);
+
+    } catch (error) {
+        showUcError(error.message);
+    } finally {
+        btnText.textContent = 'Enviar para a Conta';
+        btnSpinner.classList.add('hidden');
+        btn.disabled = false;
+    }
+}
+
+// ==========================================
 // FUNIL DE CONVERSÃO
 // ==========================================
 
@@ -1708,10 +1955,10 @@ function updateFunnel(summary) {
     const leadsRatio = impressions > 0 ? Math.max(0.15, leads / impressions) : 0.25;
 
     // Dimensões SVG
-    const W = 480, H = 300;
+    const W = 480, H = 320;
     const centerX = W / 2;
     const stageH = 58;
-    const gapH = 32;
+    const gapH = 38;
     const startY = 16;
 
     // Larguras de cada estágio (topo e base do trapézio)
@@ -1724,10 +1971,10 @@ function updateFunnel(summary) {
 
     // Y positions
     const s1Y = startY;
-    const arrow1Y = s1Y + stageH;
-    const s2Y = arrow1Y + gapH;
-    const arrow2Y = s2Y + stageH;
-    const s3Y = arrow2Y + gapH;
+    const gap1Y = s1Y + stageH;
+    const s2Y = gap1Y + gapH;
+    const gap2Y = s2Y + stageH;
+    const s3Y = gap2Y + gapH;
 
     function trapezoid(topW, botW, y, h) {
         const tl = centerX - topW / 2, tr = centerX + topW / 2;
@@ -1735,8 +1982,29 @@ function updateFunnel(summary) {
         return `M${tl},${y} L${tr},${y} L${br},${y + h} L${bl},${y + h} Z`;
     }
 
+    // Conector visual: trapézio translúcido entre estágios (conecta base do de cima com topo do de baixo)
+    function connector(topW, botW, y, h) {
+        const tl = centerX - topW / 2, tr = centerX + topW / 2;
+        const bl = centerX - botW / 2, br = centerX + botW / 2;
+        return `M${tl},${y} L${tr},${y} L${br},${y + h} L${bl},${y + h} Z`;
+    }
+
+    // Badge centralizado sobre o conector
+    function rateBadge(y, h, label, value, color, bgColor, delay) {
+        const badgeMidY = y + h / 2;
+        const text = `${label} ${value}`;
+        const textLen = text.length;
+        const pillW = Math.max(82, textLen * 7.5 + 20);
+        const pillH = 22;
+        return `
+            <g class="funnel-stage" style="--delay:${delay}">
+                <rect x="${centerX - pillW / 2}" y="${badgeMidY - pillH / 2}" width="${pillW}" height="${pillH}" rx="${pillH / 2}" fill="${bgColor}" stroke="${color}" stroke-width="1"/>
+                <text x="${centerX}" y="${badgeMidY + 4}" text-anchor="middle" fill="${color}" font-size="11" font-weight="700">${text}</text>
+            </g>`;
+    }
+
     const svg = `
-        <svg viewBox="0 0 ${W} ${H}" class="w-full" preserveAspectRatio="xMidYMid meet" style="max-height:320px">
+        <svg viewBox="0 0 ${W} ${H}" class="w-full" preserveAspectRatio="xMidYMid meet" style="max-height:340px">
             <defs>
                 <linearGradient id="funnelGrad1" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stop-color="rgba(59,130,246,0.2)"/>
@@ -1754,45 +2022,37 @@ function updateFunnel(summary) {
 
             <!-- Stage 1: Impressões -->
             <g class="funnel-stage" style="--delay:0">
-                <path d="${trapezoid(s1TopW, s1BotW, s1Y, stageH)}" fill="url(#funnelGrad1)" stroke="rgba(59,130,246,0.35)" stroke-width="1.5" rx="4"/>
-                <text x="${centerX}" y="${s1Y + stageH / 2 - 8}" text-anchor="middle" fill="rgba(148,163,184,0.8)" font-size="10" font-weight="600" letter-spacing="0.05em">IMPRESSOES</text>
+                <path d="${trapezoid(s1TopW, s1BotW, s1Y, stageH)}" fill="url(#funnelGrad1)" stroke="rgba(59,130,246,0.35)" stroke-width="1.5"/>
+                <text x="${centerX}" y="${s1Y + stageH / 2 - 8}" text-anchor="middle" fill="rgba(148,163,184,0.8)" font-size="10" font-weight="600" letter-spacing="0.05em">IMPRESSÕES</text>
                 <text x="${centerX}" y="${s1Y + stageH / 2 + 12}" text-anchor="middle" fill="white" font-size="18" font-weight="700">${formatNumber(impressions)}</text>
             </g>
 
-            <!-- Arrow + CTR -->
-            <g class="funnel-stage" style="--delay:1">
-                <line x1="${centerX}" y1="${arrow1Y + 4}" x2="${centerX}" y2="${arrow1Y + gapH - 4}" stroke="rgba(100,116,139,0.3)" stroke-width="1.5" stroke-dasharray="4 3"/>
-                <polygon points="${centerX - 4},${arrow1Y + gapH - 8} ${centerX + 4},${arrow1Y + gapH - 8} ${centerX},${arrow1Y + gapH - 2}" fill="rgba(100,116,139,0.4)"/>
-                <rect x="${centerX + 12}" y="${arrow1Y + gapH / 2 - 10}" width="${ctr >= 10 ? 86 : 78}" height="20" rx="10" fill="rgba(59,130,246,0.1)" stroke="rgba(59,130,246,0.2)" stroke-width="1"/>
-                <text x="${centerX + 12 + (ctr >= 10 ? 43 : 39)}" y="${arrow1Y + gapH / 2 + 4}" text-anchor="middle" fill="rgb(96,165,250)" font-size="11" font-weight="700">CTR ${ctr.toFixed(1)}%</text>
-            </g>
+            <!-- Conector 1 + CTR badge -->
+            <path d="${connector(s1BotW, s2TopW, gap1Y, gapH)}" fill="rgba(59,130,246,0.04)" class="funnel-stage" style="--delay:1"/>
+            ${rateBadge(gap1Y, gapH, 'CTR', ctr.toFixed(1) + '%', 'rgb(96,165,250)', 'rgba(59,130,246,0.12)', 1)}
 
             <!-- Stage 2: Cliques -->
             <g class="funnel-stage" style="--delay:2">
-                <path d="${trapezoid(s2TopW, s2BotW, s2Y, stageH)}" fill="url(#funnelGrad2)" stroke="rgba(6,182,212,0.35)" stroke-width="1.5" rx="4"/>
+                <path d="${trapezoid(s2TopW, s2BotW, s2Y, stageH)}" fill="url(#funnelGrad2)" stroke="rgba(6,182,212,0.35)" stroke-width="1.5"/>
                 <text x="${centerX}" y="${s2Y + stageH / 2 - 8}" text-anchor="middle" fill="rgba(148,163,184,0.8)" font-size="10" font-weight="600" letter-spacing="0.05em">CLIQUES</text>
                 <text x="${centerX}" y="${s2Y + stageH / 2 + 12}" text-anchor="middle" fill="white" font-size="18" font-weight="700">${formatNumber(clicks)}</text>
             </g>
 
-            <!-- Arrow + Conv Rate -->
-            <g class="funnel-stage" style="--delay:3">
-                <line x1="${centerX}" y1="${arrow2Y + 4}" x2="${centerX}" y2="${arrow2Y + gapH - 4}" stroke="rgba(100,116,139,0.3)" stroke-width="1.5" stroke-dasharray="4 3"/>
-                <polygon points="${centerX - 4},${arrow2Y + gapH - 8} ${centerX + 4},${arrow2Y + gapH - 8} ${centerX},${arrow2Y + gapH - 2}" fill="rgba(100,116,139,0.4)"/>
-                <rect x="${centerX + 12}" y="${arrow2Y + gapH / 2 - 10}" width="${convRate >= 10 ? 94 : 86}" height="20" rx="10" fill="rgba(16,185,129,0.1)" stroke="rgba(16,185,129,0.2)" stroke-width="1"/>
-                <text x="${centerX + 12 + (convRate >= 10 ? 47 : 43)}" y="${arrow2Y + gapH / 2 + 4}" text-anchor="middle" fill="rgb(52,211,153)" font-size="11" font-weight="700">Conv ${convRate.toFixed(1)}%</text>
-            </g>
+            <!-- Conector 2 + Conversão badge -->
+            <path d="${connector(s2BotW, s3TopW, gap2Y, gapH)}" fill="rgba(16,185,129,0.04)" class="funnel-stage" style="--delay:3"/>
+            ${rateBadge(gap2Y, gapH, 'Conv', convRate.toFixed(1) + '%', 'rgb(52,211,153)', 'rgba(16,185,129,0.12)', 3)}
 
             <!-- Stage 3: Leads -->
             <g class="funnel-stage" style="--delay:4">
-                <path d="${trapezoid(s3TopW, s3BotW, s3Y, stageH)}" fill="url(#funnelGrad3)" stroke="rgba(16,185,129,0.35)" stroke-width="1.5" rx="4"/>
+                <path d="${trapezoid(s3TopW, s3BotW, s3Y, stageH)}" fill="url(#funnelGrad3)" stroke="rgba(16,185,129,0.35)" stroke-width="1.5"/>
                 <text x="${centerX}" y="${s3Y + stageH / 2 - 8}" text-anchor="middle" fill="rgba(148,163,184,0.8)" font-size="10" font-weight="600" letter-spacing="0.05em">LEADS</text>
                 <text x="${centerX}" y="${s3Y + stageH / 2 + 12}" text-anchor="middle" fill="white" font-size="18" font-weight="700">${formatNumber(leads)}</text>
             </g>
 
-            <!-- CPL Badge -->
+            <!-- CPL integrado ao estágio de Leads -->
             <g class="funnel-stage" style="--delay:5">
-                <rect x="${centerX - 60}" y="${s3Y + stageH + 12}" width="120" height="26" rx="13" fill="rgba(168,85,247,0.1)" stroke="rgba(168,85,247,0.25)" stroke-width="1"/>
-                <text x="${centerX}" y="${s3Y + stageH + 30}" text-anchor="middle" fill="rgb(192,132,252)" font-size="12" font-weight="700">CPL ${leads > 0 ? formatCurrency(cpl) : '—'}</text>
+                <rect x="${centerX - 55}" y="${s3Y + stageH + 8}" width="110" height="24" rx="12" fill="rgba(168,85,247,0.12)" stroke="rgba(168,85,247,0.3)" stroke-width="1"/>
+                <text x="${centerX}" y="${s3Y + stageH + 24}" text-anchor="middle" fill="rgb(192,132,252)" font-size="11" font-weight="700">CPL ${leads > 0 ? formatCurrency(cpl) : '—'}</text>
             </g>
         </svg>`;
 
