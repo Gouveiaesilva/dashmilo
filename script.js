@@ -1539,6 +1539,10 @@ function resetDashboard() {
     const platformBanner = document.getElementById('platformBanner');
     if (platformBanner) { platformBanner.classList.add('hidden'); platformBanner.classList.remove('flex'); }
 
+    // Limpar sparklines e donut
+    clearSparklines();
+    hideDonutChart();
+
     // Limpar dados atuais
     currentDashboardData = null;
 }
@@ -1624,7 +1628,7 @@ async function fetchClientData(adAccountId, campaignId = null, adsetId = null) {
 function updateDashboard(data) {
     if (!data || !data.summary) return;
 
-    const { summary, trends, daily } = data;
+    const { summary, trends, daily, campaigns } = data;
     lastMetricsSummary = summary;
 
     // Atualizar cards
@@ -1648,6 +1652,23 @@ function updateDashboard(data) {
         } else {
             cplBadgeEl.classList.add('hidden');
         }
+    }
+
+    // Sparklines nos KPI cards
+    if (daily && daily.length > 1) {
+        renderSparkline('sparklineSpend', daily, 'spend', '#3b82f6');
+        renderSparkline('sparklineImpressions', daily, 'impressions', '#a855f7');
+        renderSparkline('sparklineLeads', daily, 'leads', '#f97316');
+        renderSparkline('sparklineCpl', daily, 'cpl', '#137fec');
+    } else {
+        clearSparklines();
+    }
+
+    // Donut de distribuição por campanha
+    if (campaigns && campaigns.length > 0) {
+        renderDonutChart(campaigns);
+    } else {
+        hideDonutChart();
     }
 
     // Atualizar gráfico
@@ -2743,6 +2764,189 @@ function formatAxisNumber(value) {
     if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
     if (value >= 1000) return (value / 1000).toFixed(value % 1000 === 0 ? 0 : 1) + 'k';
     return String(Math.round(value));
+}
+
+// ==========================================
+// SPARKLINES (mini-gráficos nos KPI cards)
+// ==========================================
+
+function renderSparkline(containerId, dailyData, metric, color) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (!dailyData || dailyData.length < 2) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const values = dailyData.map(d => d[metric] || 0);
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const range = max - min || 1;
+
+    const w = 120;
+    const h = 32;
+    const pad = 2;
+    const chartW = w - pad * 2;
+    const chartH = h - pad * 2;
+
+    const points = values.map((v, i) => ({
+        x: pad + (i / (values.length - 1)) * chartW,
+        y: pad + chartH - ((v - min) / range) * chartH
+    }));
+
+    const linePath = buildSmoothPath(points);
+    const areaPath = linePath + ` L${points[points.length - 1].x},${h} L${points[0].x},${h} Z`;
+
+    const gradId = `sparkGrad_${metric}`;
+    container.innerHTML = `
+        <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" class="w-full h-full">
+            <defs>
+                <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="${color}" stop-opacity="0.2"/>
+                    <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+                </linearGradient>
+            </defs>
+            <path d="${areaPath}" fill="url(#${gradId})"/>
+            <path d="${linePath}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    `;
+}
+
+function clearSparklines() {
+    ['sparklineSpend', 'sparklineImpressions', 'sparklineLeads', 'sparklineCpl'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '';
+    });
+}
+
+// ==========================================
+// DONUT CHART (distribuição de investimento)
+// ==========================================
+
+const DONUT_COLORS = ['#3b82f6', '#a855f7', '#f97316', '#22c55e', '#ec4899', '#06b6d4', '#ef4444', '#eab308'];
+
+function renderDonutChart(campaigns) {
+    const section = document.getElementById('investmentDonutSection');
+    const container = document.getElementById('investmentDonutContainer');
+    if (!section || !container) return;
+
+    // Filtrar campanhas com spend > 0
+    let items = (campaigns || []).filter(c => c.spend > 0).sort((a, b) => b.spend - a.spend);
+
+    // Esconder se 0 ou 1 campanha
+    if (items.length < 2) {
+        section.classList.add('hidden');
+        return;
+    }
+
+    // Agrupar menores em "Outras" se > 6
+    if (items.length > 6) {
+        const top5 = items.slice(0, 5);
+        const others = items.slice(5);
+        const othersSpend = others.reduce((s, c) => s + c.spend, 0);
+        items = [...top5, { name: 'Outras', spend: othersSpend, _isOther: true }];
+    }
+
+    const totalSpend = items.reduce((s, c) => s + c.spend, 0);
+    if (totalSpend === 0) {
+        section.classList.add('hidden');
+        return;
+    }
+
+    section.classList.remove('hidden');
+
+    // Donut SVG params
+    const size = 180;
+    const cx = size / 2;
+    const cy = size / 2;
+    const radius = 65;
+    const strokeWidth = 22;
+    const circumference = 2 * Math.PI * radius;
+
+    // Build segments
+    let segments = '';
+    let offset = 0;
+    items.forEach((item, i) => {
+        const pct = item.spend / totalSpend;
+        const dash = pct * circumference;
+        const gap = circumference - dash;
+        const color = DONUT_COLORS[i % DONUT_COLORS.length];
+        const rotation = (offset / circumference) * 360 - 90;
+
+        segments += `<circle
+            cx="${cx}" cy="${cy}" r="${radius}"
+            fill="none" stroke="${color}" stroke-width="${strokeWidth}"
+            stroke-dasharray="${dash} ${gap}"
+            transform="rotate(${rotation} ${cx} ${cy})"
+            class="transition-opacity duration-200"
+            data-donut-index="${i}"
+            style="cursor:pointer"
+            onmouseenter="highlightDonutSegment(${i})"
+            onmouseleave="unhighlightDonutSegment()"
+        />`;
+        offset += dash;
+    });
+
+    // Center text
+    const centerText = `
+        <text x="${cx}" y="${cy - 6}" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600">TOTAL</text>
+        <text x="${cx}" y="${cy + 12}" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">${formatCurrency(totalSpend)}</text>
+    `;
+
+    // Legend
+    const legendItems = items.map((item, i) => {
+        const pct = ((item.spend / totalSpend) * 100).toFixed(1);
+        const color = DONUT_COLORS[i % DONUT_COLORS.length];
+        return `
+            <div class="flex items-center gap-3 py-1.5 donut-legend-item" data-donut-index="${i}"
+                 onmouseenter="highlightDonutSegment(${i})" onmouseleave="unhighlightDonutSegment()">
+                <div class="w-3 h-3 rounded-full flex-shrink-0" style="background:${color}"></div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-xs text-slate-300 font-medium truncate">${item.name}</p>
+                </div>
+                <div class="text-right flex-shrink-0">
+                    <span class="text-xs font-bold text-white">${pct}%</span>
+                    <span class="text-[10px] text-slate-500 ml-1">${formatCurrency(item.spend)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="flex-shrink-0">
+            <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+                ${segments}
+                ${centerText}
+            </svg>
+        </div>
+        <div class="flex-1 w-full sm:w-auto space-y-0.5">
+            ${legendItems}
+        </div>
+    `;
+}
+
+function highlightDonutSegment(index) {
+    document.querySelectorAll('[data-donut-index]').forEach(el => {
+        const i = parseInt(el.getAttribute('data-donut-index'));
+        if (el.tagName === 'circle') {
+            el.style.opacity = i === index ? '1' : '0.3';
+        }
+        if (el.classList.contains('donut-legend-item')) {
+            el.style.opacity = i === index ? '1' : '0.4';
+        }
+    });
+}
+
+function unhighlightDonutSegment() {
+    document.querySelectorAll('[data-donut-index]').forEach(el => {
+        el.style.opacity = '1';
+    });
+}
+
+function hideDonutChart() {
+    const section = document.getElementById('investmentDonutSection');
+    if (section) section.classList.add('hidden');
 }
 
 // ==========================================
