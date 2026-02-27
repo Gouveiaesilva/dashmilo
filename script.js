@@ -1080,13 +1080,16 @@ let currentCurrency = 'BRL';
 // Popular o select de clientes no header
 async function populateClientFilter() {
     const select = document.getElementById('clientFilter');
+    const selectMobile = document.getElementById('clientFilterMobile');
     const currentValue = select.value;
 
     select.innerHTML = '<option value="">Carregando...</option>';
+    if (selectMobile) selectMobile.innerHTML = '<option value="">Carregando...</option>';
 
     const clients = await loadClients();
 
     select.innerHTML = '<option value="">Selecione um Cliente</option>';
+    if (selectMobile) selectMobile.innerHTML = '<option value="">Cliente</option>';
 
     clients.forEach(client => {
         const option = document.createElement('option');
@@ -1094,10 +1097,13 @@ async function populateClientFilter() {
         option.textContent = client.name;
         option.dataset.adAccountId = client.adAccountId;
         select.appendChild(option);
+
+        if (selectMobile) selectMobile.appendChild(option.cloneNode(true));
     });
 
     if (currentValue && clients.some(c => c.id === currentValue)) {
         select.value = currentValue;
+        if (selectMobile) selectMobile.value = currentValue;
     }
 
     updateSelectedClientName();
@@ -1123,6 +1129,8 @@ async function onClientFilterChange() {
     updateAdsManagerLink();
 
     const select = document.getElementById('clientFilter');
+    const clientMobile = document.getElementById('clientFilterMobile');
+    if (clientMobile && clientMobile.value !== select.value) clientMobile.value = select.value;
     const selectedOption = select.options[select.selectedIndex];
 
     // Resetar filtros dependentes
@@ -1262,7 +1270,9 @@ async function loadCampaigns(adAccountId) {
 // Popular filtro de campanhas
 function populateCampaignFilter(campaigns) {
     const select = document.getElementById('campaignFilter');
+    const selectMobile = document.getElementById('campaignFilterMobile');
     select.innerHTML = '<option value="">Todas as Campanhas</option>';
+    if (selectMobile) selectMobile.innerHTML = '<option value="">Campanha</option>';
 
     campaigns.forEach(campaign => {
         const option = document.createElement('option');
@@ -1270,14 +1280,19 @@ function populateCampaignFilter(campaigns) {
         option.innerHTML = formatOptionWithStatus(campaign.name, campaign.status);
         option.dataset.status = campaign.status;
         select.appendChild(option);
+
+        if (selectMobile) selectMobile.appendChild(option.cloneNode(true));
     });
 
     select.disabled = false;
+    if (selectMobile) selectMobile.disabled = false;
 }
 
 // Callback quando o filtro de campanha muda
 async function onCampaignFilterChange() {
     const select = document.getElementById('campaignFilter');
+    const campMobile = document.getElementById('campaignFilterMobile');
+    if (campMobile && campMobile.value !== select.value) campMobile.value = select.value;
 
     // Resetar filtro de conjuntos
     resetAdsetFilter();
@@ -1344,7 +1359,9 @@ async function loadAdsets(campaignId) {
 // Popular filtro de conjuntos
 function populateAdsetFilter(adsets) {
     const select = document.getElementById('adsetFilter');
+    const selectMobile = document.getElementById('adsetFilterMobile');
     select.innerHTML = '<option value="">Todos os Conjuntos</option>';
+    if (selectMobile) selectMobile.innerHTML = '<option value="">Conjunto</option>';
 
     adsets.forEach(adset => {
         const option = document.createElement('option');
@@ -1352,13 +1369,19 @@ function populateAdsetFilter(adsets) {
         option.innerHTML = formatOptionWithStatus(adset.name, adset.status);
         option.dataset.status = adset.status;
         select.appendChild(option);
+
+        if (selectMobile) selectMobile.appendChild(option.cloneNode(true));
     });
 
     select.disabled = false;
+    if (selectMobile) selectMobile.disabled = false;
 }
 
 // Callback quando o filtro de conjunto muda
 function onAdsetFilterChange() {
+    const select = document.getElementById('adsetFilter');
+    const adsetMobile = document.getElementById('adsetFilterMobile');
+    if (adsetMobile && adsetMobile.value !== select.value) adsetMobile.value = select.value;
     applyCurrentFilters();
 }
 
@@ -1385,27 +1408,50 @@ function getStatusIndicator(status) {
 // Resetar filtro de campanhas
 function resetCampaignFilter() {
     const select = document.getElementById('campaignFilter');
+    const selectMobile = document.getElementById('campaignFilterMobile');
     select.innerHTML = '<option value="">Todas as Campanhas</option>';
     select.disabled = true;
+    if (selectMobile) { selectMobile.innerHTML = '<option value="">Campanha</option>'; selectMobile.disabled = true; }
     cachedCampaigns = [];
 }
 
 // Resetar filtro de conjuntos
 function resetAdsetFilter() {
     const select = document.getElementById('adsetFilter');
+    const selectMobile = document.getElementById('adsetFilterMobile');
     select.innerHTML = '<option value="">Todos os Conjuntos</option>';
     select.disabled = true;
+    if (selectMobile) { selectMobile.innerHTML = '<option value="">Conjunto</option>'; selectMobile.disabled = true; }
     cachedAdsets = [];
 }
 
 // Limpar todos os filtros
 function clearAllFilters() {
     document.getElementById('clientFilter').value = '';
+    const clientMobile = document.getElementById('clientFilterMobile');
+    if (clientMobile) clientMobile.value = '';
     resetCampaignFilter();
     resetAdsetFilter();
     updateSelectedClientName();
     resetDashboard();
     currentAdAccountId = null;
+}
+
+// Sincronizar filtros mobile com desktop
+function syncMobileFilter(type) {
+    const map = {
+        client: { mobile: 'clientFilterMobile', desktop: 'clientFilter', callback: onClientFilterChange },
+        campaign: { mobile: 'campaignFilterMobile', desktop: 'campaignFilter', callback: onCampaignFilterChange },
+        adset: { mobile: 'adsetFilterMobile', desktop: 'adsetFilter', callback: onAdsetFilterChange }
+    };
+    const cfg = map[type];
+    if (!cfg) return;
+    const mobileEl = document.getElementById(cfg.mobile);
+    const desktopEl = document.getElementById(cfg.desktop);
+    if (mobileEl && desktopEl) {
+        desktopEl.value = mobileEl.value;
+        cfg.callback();
+    }
 }
 
 // ==========================================
@@ -1945,6 +1991,8 @@ function switchPanel(panel) {
         navVisaoGeral.classList.add('sidebar-item-active');
         navVisaoGeral.classList.remove('text-slate-400', 'hover:text-white');
         navVisaoGeral.querySelector('.material-symbols-outlined').style.fontVariationSettings = "'FILL' 1";
+        // Forcar cards no mobile
+        if (window.innerWidth < 640) setOverviewView('cards');
     } else if (panel === 'metricas') {
         panelMetricas.classList.remove('hidden');
         headerMetricas.classList.remove('hidden');
@@ -2005,7 +2053,7 @@ async function loadOverviewData() {
     overviewMetricsAccum = { totalSpend: 0, totalLeads: 0, currencies: [] };
 
     // No mobile, forçar view de cards (board tem min-w-[780px])
-    if (window.innerWidth < 768) {
+    if (window.innerWidth < 640) {
         setOverviewView('cards');
     }
 
@@ -2424,6 +2472,10 @@ function formatOverviewBalance(valueCents, currency) {
 // ==========================================
 
 function setOverviewView(mode) {
+    // Forcar cards view no mobile (board nao funciona em telas pequenas)
+    const isMobile = window.innerWidth < 640;
+    if (isMobile && mode === 'board') mode = 'cards';
+
     overviewViewMode = mode;
 
     const btnBoard = document.getElementById('viewBoard');
@@ -2784,6 +2836,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 header.classList.remove('scrolled');
             }
         });
+    }
+});
+
+// Forcar cards view no mobile ao redimensionar
+window.addEventListener('resize', function() {
+    if (window.innerWidth < 640 && overviewViewMode === 'board') {
+        setOverviewView('cards');
     }
 });
 

@@ -305,10 +305,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 /* Melhorar touch targets */
 @media (max-width: 640px) {
-  /* Botões com área de toque maior (exceto filtros compactos e tabs) */
-  button:not(.chart-filter-btn):not(.analysis-tab-btn):not(.board-sort-col),
+  /* Botões com área de toque maior (incluindo filtros e tabs) */
+  button:not(.board-sort-col),
   a, select {
-    min-height: 44px;
+    min-height: 40px;
   }
 
   /* Inputs mais confortáveis */
@@ -329,19 +329,44 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     padding-top: env(safe-area-inset-top);
   }
 
-  /* Cards de métricas - layout otimizado */
-  .grid.grid-cols-1.xs\:grid-cols-2 {
-    gap: 12px;
+  /* KPI cards - gap otimizado no mobile */
+  #panelVisaoGeral > .grid.grid-cols-2,
+  #panelMetricas > .grid.grid-cols-2 {
+    gap: 10px;
   }
 
-  /* Filtros com scroll suave */
+  /* Filtros mobile - barra scrollavel com items bem dimensionados */
   .hide-scrollbar {
     scroll-snap-type: x mandatory;
     scroll-padding: 0 16px;
+    -webkit-overflow-scrolling: touch;
   }
 
   .hide-scrollbar > * {
     scroll-snap-align: start;
+  }
+
+  /* Filtros mobile com fundo e borda individuais */
+  #clientFilterMobile,
+  #campaignFilterMobile,
+  #adsetFilterMobile {
+    font-size: 13px !important;
+    min-height: 40px;
+  }
+
+  /* Chart filter buttons - grid equitativo */
+  .chart-filters {
+    width: 100%;
+  }
+
+  .chart-filter-btn {
+    min-height: 36px;
+    line-height: 1.2;
+  }
+
+  /* Analysis tabs com label visível */
+  .analysis-tab-btn {
+    min-height: 40px;
   }
 
   /* Toast no mobile */
@@ -354,9 +379,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   /* Modais fullscreen no mobile */
   #clientsModal > div:last-child,
   #dateFilterModal > div:last-child {
-    max-height: calc(100vh - 32px);
-    max-height: calc(100svh - 32px);
-    margin: 16px;
+    max-height: calc(100vh - 16px);
+    max-height: calc(100svh - 16px);
+    margin: 8px;
     border-radius: 16px;
   }
 
@@ -384,14 +409,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     padding-right: 12px;
   }
 
-  /* Filtros mais compactos */
-  #clientFilter,
-  #campaignFilter,
-  #adsetFilter {
-    max-width: 140px;
-    font-size: 11px !important;
-  }
-
   /* KPI cards mais compactos */
   .text-xl {
     font-size: 1.125rem;
@@ -403,6 +420,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* Chart filters em telas pequenas */
+  .chart-filter-btn {
+    font-size: 10px !important;
+    padding-left: 4px;
+    padding-right: 4px;
   }
 }
 

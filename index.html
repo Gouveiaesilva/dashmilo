@@ -34,15 +34,15 @@
 <div id="loginScreen" class="fixed inset-0 z-[100] bg-background-dark flex items-center justify-center p-4">
     <div class="w-full max-w-md">
         <!-- Logo e Titulo -->
-        <div class="text-center mb-8">
-            <img src="img/logo.jpg" alt="Logo" class="w-20 h-20 rounded-2xl mx-auto mb-4 shadow-lg object-cover"/>
-            <h1 class="text-2xl font-bold text-white tracking-tight">Painel Gerencial Meta Ads</h1>
-            <p class="text-slate-500 text-sm mt-2">Gerencie suas campanhas de anuncios</p>
+        <div class="text-center mb-5 sm:mb-8">
+            <img src="img/logo.jpg" alt="Logo" class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl mx-auto mb-3 sm:mb-4 shadow-lg object-cover"/>
+            <h1 class="text-xl sm:text-2xl font-bold text-white tracking-tight">Painel Gerencial Meta Ads</h1>
+            <p class="text-slate-500 text-xs sm:text-sm mt-1.5 sm:mt-2">Gerencie suas campanhas de anuncios</p>
         </div>
 
         <!-- Card de Login -->
-        <div class="bg-surface-dark border border-border-dark rounded-2xl p-6 sm:p-8 shadow-2xl">
-            <h2 class="text-lg font-bold text-white mb-6 text-center">Entrar na sua conta</h2>
+        <div class="bg-surface-dark border border-border-dark rounded-2xl p-5 sm:p-8 shadow-2xl">
+            <h2 class="text-base sm:text-lg font-bold text-white mb-4 sm:mb-6 text-center">Entrar na sua conta</h2>
 
             <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-4">
                 <!-- Email -->
@@ -167,18 +167,18 @@
     <!-- Header Visao Geral (visivel por padrao) -->
     <header id="headerVisaoGeral" class="sticky top-0 z-30 bg-background-dark/95 backdrop-blur-md border-b border-border-dark">
         <div class="max-w-7xl mx-auto">
-            <div class="flex items-center justify-between gap-4 px-4 sm:px-6 py-3 sm:py-4">
-                <div class="flex items-center gap-3">
+            <div class="flex items-center justify-between gap-2 sm:gap-4 px-4 sm:px-6 py-3 sm:py-4">
+                <div class="flex items-center gap-2 sm:gap-3 min-w-0">
                     <button class="menu-toggle lg:hidden p-2 -ml-2 text-slate-400 hover:text-white transition-colors" onclick="toggleSidebar()">
                         <span class="material-symbols-outlined text-2xl">menu</span>
                     </button>
                     <div class="min-w-0">
                         <h1 class="text-base sm:text-xl font-bold text-white truncate">Visao Geral</h1>
-                        <p class="text-[11px] sm:text-xs text-slate-500 truncate">Panorama de todos os clientes</p>
+                        <p class="text-[11px] sm:text-xs text-slate-500 truncate hidden sm:block">Panorama de todos os clientes</p>
                     </div>
                 </div>
-                <div class="flex items-center gap-2 shrink-0">
-                    <div class="flex items-center bg-surface-dark border border-border-dark rounded-lg p-0.5">
+                <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                    <div class="hidden sm:flex items-center bg-surface-dark border border-border-dark rounded-lg p-0.5">
                         <button id="viewBoard" onclick="setOverviewView('board')" title="Visualizacao em lista"
                             class="p-1.5 rounded-md transition-colors text-white bg-primary/20">
                             <span class="material-symbols-outlined text-lg">view_list</span>
@@ -188,13 +188,13 @@
                             <span class="material-symbols-outlined text-lg">grid_view</span>
                         </button>
                     </div>
-                    <button onclick="openDateFilterModal()" class="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 bg-surface-dark border border-border-dark rounded-lg text-xs sm:text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors">
+                    <button onclick="openDateFilterModal()" class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 bg-surface-dark border border-border-dark rounded-lg text-xs sm:text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors">
                         <span class="material-symbols-outlined text-base">calendar_today</span>
                         <span id="overviewDateLabel" class="hidden sm:inline">Ultimos 7 dias</span>
-                        <span class="material-symbols-outlined text-base text-slate-500">expand_more</span>
+                        <span class="material-symbols-outlined text-sm sm:text-base text-slate-500">expand_more</span>
                     </button>
                     <button onclick="loadOverviewData()" class="p-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors" title="Atualizar dados">
-                        <span class="material-symbols-outlined text-xl">refresh</span>
+                        <span class="material-symbols-outlined text-lg sm:text-xl">refresh</span>
                     </button>
                 </div>
             </div>
@@ -204,8 +204,8 @@
     <!-- Header Metricas (oculto por padrao) -->
     <header id="headerMetricas" class="hidden sticky top-0 z-30 bg-background-dark/95 backdrop-blur-md border-b border-border-dark">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
+            <!-- Linha 1: Menu + Titulo + Periodo + Acoes -->
             <div class="flex items-center justify-between gap-3">
-                <!-- Esquerda: Menu + Titulo -->
                 <div class="flex items-center gap-3 min-w-0">
                     <button class="menu-toggle lg:hidden p-2 -ml-2 text-slate-400 hover:text-white transition-colors" onclick="toggleSidebar()">
                         <span class="material-symbols-outlined text-2xl">menu</span>
@@ -216,14 +216,14 @@
                     </div>
                 </div>
 
-                <!-- Direita: Filtros + Acoes -->
-                <div class="flex items-center gap-1.5 sm:gap-2 overflow-x-auto hide-scrollbar">
-                    <!-- Filtros agrupados -->
-                    <div class="flex items-center gap-1.5 bg-surface-dark/50 border border-border-dark/50 rounded-xl p-1 shrink-0">
+                <!-- Desktop: filtros inline / Mobile: apenas periodo + acoes -->
+                <div class="flex items-center gap-1.5 sm:gap-2">
+                    <!-- Filtros agrupados (hidden no mobile, aparecem na linha 2) -->
+                    <div class="hidden sm:flex items-center gap-1.5 bg-surface-dark/50 border border-border-dark/50 rounded-xl p-1 shrink-0">
                         <!-- Cliente -->
                         <div class="relative">
                             <span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-sm">person</span>
-                            <select id="clientFilter" onchange="onClientFilterChange()" class="bg-transparent border-0 text-slate-300 rounded-lg py-1.5 pl-7 pr-6 text-xs appearance-none focus:ring-1 focus:ring-primary hover:bg-surface-dark transition-colors cursor-pointer max-w-[130px] sm:max-w-[170px]">
+                            <select id="clientFilter" onchange="onClientFilterChange()" class="bg-transparent border-0 text-slate-300 rounded-lg py-1.5 pl-7 pr-6 text-xs appearance-none focus:ring-1 focus:ring-primary hover:bg-surface-dark transition-colors cursor-pointer sm:max-w-[170px]">
                                 <option value="">Cliente</option>
                             </select>
                             <span class="material-symbols-outlined absolute right-1 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none text-xs">expand_more</span>
@@ -232,7 +232,7 @@
                         <div class="w-px h-5 bg-border-dark/60"></div>
 
                         <!-- Campanha -->
-                        <div class="relative hidden sm:block">
+                        <div class="relative">
                             <span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-sm">campaign</span>
                             <select id="campaignFilter" onchange="onCampaignFilterChange()" class="bg-transparent border-0 text-slate-300 rounded-lg py-1.5 pl-7 pr-6 text-xs appearance-none focus:ring-1 focus:ring-primary hover:bg-surface-dark transition-colors cursor-pointer max-w-[150px] disabled:opacity-30" disabled>
                                 <option value="">Campanhas</option>
@@ -272,6 +272,36 @@
                             <span class="material-symbols-outlined text-lg">send</span>
                         </button>
                     </div>
+                </div>
+            </div>
+
+            <!-- Linha 2: Filtros mobile (visivel apenas no mobile) -->
+            <div class="flex sm:hidden items-center gap-2 mt-2.5 overflow-x-auto hide-scrollbar pb-1">
+                <!-- Cliente -->
+                <div class="relative shrink-0">
+                    <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-sm">person</span>
+                    <select id="clientFilterMobile" onchange="syncMobileFilter('client')" class="bg-surface-dark border border-border-dark text-slate-300 rounded-lg py-2 pl-8 pr-7 text-xs appearance-none focus:ring-1 focus:ring-primary transition-colors cursor-pointer min-w-[120px]">
+                        <option value="">Cliente</option>
+                    </select>
+                    <span class="material-symbols-outlined absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none text-xs">expand_more</span>
+                </div>
+
+                <!-- Campanha -->
+                <div class="relative shrink-0">
+                    <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-sm">campaign</span>
+                    <select id="campaignFilterMobile" onchange="syncMobileFilter('campaign')" class="bg-surface-dark border border-border-dark text-slate-300 rounded-lg py-2 pl-8 pr-7 text-xs appearance-none focus:ring-1 focus:ring-primary transition-colors cursor-pointer min-w-[120px] disabled:opacity-30" disabled>
+                        <option value="">Campanha</option>
+                    </select>
+                    <span class="material-symbols-outlined absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none text-xs">expand_more</span>
+                </div>
+
+                <!-- Conjunto -->
+                <div class="relative shrink-0">
+                    <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-sm">account_tree</span>
+                    <select id="adsetFilterMobile" onchange="syncMobileFilter('adset')" class="bg-surface-dark border border-border-dark text-slate-300 rounded-lg py-2 pl-8 pr-7 text-xs appearance-none focus:ring-1 focus:ring-primary transition-colors cursor-pointer min-w-[120px] disabled:opacity-30" disabled>
+                        <option value="">Conjunto</option>
+                    </select>
+                    <span class="material-symbols-outlined absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none text-xs">expand_more</span>
                 </div>
             </div>
         </div>
@@ -424,7 +454,7 @@
         </div>
 
         <!-- Cards de Metricas -->
-        <div class="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
             <!-- Card Valor Investido -->
             <div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm hover:border-slate-700 transition-colors group">
                 <div class="flex items-center justify-between mb-3 sm:mb-4">
@@ -500,11 +530,11 @@
                     <h3 class="text-base sm:text-lg font-bold text-white tracking-tight">Analise de Performance</h3>
                     <p class="text-xs sm:text-sm text-slate-500 mt-1">Variacao das metricas principais no periodo selecionado</p>
                 </div>
-                <div class="flex items-center gap-1 p-1 bg-background-dark border border-border-dark rounded-lg chart-filters flex-wrap sm:flex-nowrap">
-                    <button class="chart-filter-btn flex-1 sm:flex-initial text-center px-2 sm:px-4 py-1.5 rounded-md text-[10px] sm:text-xs font-bold bg-primary text-white shadow-lg transition-all" data-metric="spend"><span class="sm:hidden">Invest.</span><span class="hidden sm:inline">Valor Investido</span></button>
-                    <button class="chart-filter-btn flex-1 sm:flex-initial text-center px-2 sm:px-4 py-1.5 rounded-md text-[10px] sm:text-xs font-bold text-slate-500 hover:text-white transition-all" data-metric="impressions"><span class="sm:hidden">Impr.</span><span class="hidden sm:inline">Impressoes</span></button>
-                    <button class="chart-filter-btn flex-1 sm:flex-initial text-center px-2 sm:px-4 py-1.5 rounded-md text-[10px] sm:text-xs font-bold text-slate-500 hover:text-white transition-all" data-metric="leads">Leads</button>
-                    <button class="chart-filter-btn flex-1 sm:flex-initial text-center px-2 sm:px-4 py-1.5 rounded-md text-[10px] sm:text-xs font-bold text-slate-500 hover:text-white transition-all" data-metric="cpl">CPL</button>
+                <div class="grid grid-cols-4 sm:flex sm:flex-nowrap items-center gap-1 p-1 bg-background-dark border border-border-dark rounded-lg chart-filters">
+                    <button class="chart-filter-btn text-center px-1.5 sm:px-4 py-2 sm:py-1.5 rounded-md text-[11px] sm:text-xs font-bold bg-primary text-white shadow-lg transition-all" data-metric="spend"><span class="sm:hidden">Invest.</span><span class="hidden sm:inline">Valor Investido</span></button>
+                    <button class="chart-filter-btn text-center px-1.5 sm:px-4 py-2 sm:py-1.5 rounded-md text-[11px] sm:text-xs font-bold text-slate-500 hover:text-white transition-all" data-metric="impressions"><span class="sm:hidden">Impr.</span><span class="hidden sm:inline">Impressoes</span></button>
+                    <button class="chart-filter-btn text-center px-1.5 sm:px-4 py-2 sm:py-1.5 rounded-md text-[11px] sm:text-xs font-bold text-slate-500 hover:text-white transition-all" data-metric="leads">Leads</button>
+                    <button class="chart-filter-btn text-center px-1.5 sm:px-4 py-2 sm:py-1.5 rounded-md text-[11px] sm:text-xs font-bold text-slate-500 hover:text-white transition-all" data-metric="cpl">CPL</button>
                 </div>
             </div>
             <div id="chartContainer" class="relative h-[250px] sm:h-[300px] lg:h-[400px] w-full chart-grid rounded-xl border border-border-dark/50 overflow-visible">
@@ -518,18 +548,18 @@
 
             <!-- Barra de Abas: Campanhas / Criativos -->
             <div id="analysisTabBar" class="hidden mt-6">
-                <div class="flex gap-1 p-1 bg-surface-dark border border-border-dark rounded-lg w-full sm:w-fit mx-auto">
-                    <button id="tabCampaigns" onclick="switchAnalysisTab('campaigns')" class="analysis-tab-btn flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold rounded-md transition-colors text-slate-400 hover:text-white flex-1 sm:flex-initial">
+                <div class="grid grid-cols-3 sm:flex sm:w-fit gap-1 p-1 bg-surface-dark border border-border-dark rounded-lg w-full sm:w-fit mx-auto">
+                    <button id="tabCampaigns" onclick="switchAnalysisTab('campaigns')" class="analysis-tab-btn flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 sm:py-2 text-[11px] sm:text-sm font-semibold rounded-md transition-colors text-slate-400 hover:text-white">
                         <span class="material-symbols-outlined text-base">campaign</span>
-                        <span class="hidden sm:inline">Campanhas</span>
+                        <span>Campanhas</span>
                     </button>
-                    <button id="tabCreatives" onclick="switchAnalysisTab('creatives')" class="analysis-tab-btn flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold rounded-md transition-colors text-slate-400 hover:text-white flex-1 sm:flex-initial">
+                    <button id="tabCreatives" onclick="switchAnalysisTab('creatives')" class="analysis-tab-btn flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 sm:py-2 text-[11px] sm:text-sm font-semibold rounded-md transition-colors text-slate-400 hover:text-white">
                         <span class="material-symbols-outlined text-base">ads_click</span>
-                        <span class="hidden sm:inline">Criativos</span>
+                        <span>Criativos</span>
                     </button>
-                    <button id="tabAnalyst" onclick="switchAnalysisTab('analyst')" class="analysis-tab-btn flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold rounded-md transition-colors text-slate-400 hover:text-white flex-1 sm:flex-initial">
+                    <button id="tabAnalyst" onclick="switchAnalysisTab('analyst')" class="analysis-tab-btn flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 sm:py-2 text-[11px] sm:text-sm font-semibold rounded-md transition-colors text-slate-400 hover:text-white">
                         <span class="material-symbols-outlined text-base">psychology</span>
-                        <span class="hidden sm:inline">Analista</span>
+                        <span>Analista</span>
                     </button>
                 </div>
             </div>
@@ -746,19 +776,19 @@
 </main>
 
 <!-- Modal de Senha -->
-<div id="passwordModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+<div id="passwordModal" class="fixed inset-0 z-[60] hidden items-center justify-center p-2 sm:p-4">
     <!-- Overlay -->
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closePasswordModal()"></div>
 
     <!-- Modal Content -->
-    <div class="relative bg-surface-dark border border-border-dark rounded-2xl w-full max-w-sm p-6 shadow-2xl transform transition-all">
+    <div class="relative bg-surface-dark border border-border-dark rounded-2xl w-full max-w-sm p-4 sm:p-6 shadow-2xl transform transition-all">
         <!-- Header -->
-        <div class="text-center mb-6">
-            <div class="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span class="material-symbols-outlined text-primary text-3xl">lock</span>
+        <div class="text-center mb-5 sm:mb-6">
+            <div class="w-12 h-12 sm:w-14 sm:h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
+                <span class="material-symbols-outlined text-primary text-2xl sm:text-3xl">lock</span>
             </div>
-            <h2 class="text-xl font-bold text-white">Acesso Restrito</h2>
-            <p class="text-sm text-slate-500 mt-1">Digite a senha para acessar as configuracoes</p>
+            <h2 class="text-lg sm:text-xl font-bold text-white">Acesso Restrito</h2>
+            <p class="text-xs sm:text-sm text-slate-500 mt-1">Digite a senha para acessar as configuracoes</p>
         </div>
 
         <!-- Form -->
@@ -807,7 +837,7 @@
 <!-- Fim Dashboard Container -->
 
 <!-- Modal de Filtro de Periodo -->
-<div id="dateFilterModal" class="fixed inset-0 z-50 hidden items-center justify-center p-2 sm:p-4">
+<div id="dateFilterModal" class="fixed inset-0 z-[60] hidden items-center justify-center p-2 sm:p-4">
     <!-- Overlay -->
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeDateFilterModal()"></div>
 
@@ -892,7 +922,7 @@
                     <span class="material-symbols-outlined text-primary text-lg">edit_calendar</span>
                     Periodo Personalizado
                 </h3>
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-medium text-slate-400 mb-1.5">Data Inicio</label>
                         <input
@@ -920,21 +950,21 @@
 </div>
 
 <!-- Modal de Cadastro de Clientes -->
-<div id="clientsModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+<div id="clientsModal" class="fixed inset-0 z-[60] hidden items-center justify-center p-2 sm:p-4">
     <!-- Overlay -->
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeClientsModal()"></div>
 
     <!-- Modal Content -->
-    <div class="relative bg-surface-dark border border-border-dark rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl transform transition-all flex flex-col">
+    <div class="relative bg-surface-dark border border-border-dark rounded-2xl w-full max-w-2xl max-h-[90vh] max-h-[90svh] overflow-hidden shadow-2xl transform transition-all flex flex-col">
         <!-- Header -->
-        <div class="flex items-center justify-between p-6 border-b border-border-dark shrink-0">
+        <div class="flex items-center justify-between p-4 sm:p-6 border-b border-border-dark shrink-0">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
-                    <span class="material-symbols-outlined text-primary">group_add</span>
+                <div class="w-8 h-8 sm:w-10 sm:h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <span class="material-symbols-outlined text-primary text-lg sm:text-2xl">group_add</span>
                 </div>
                 <div>
-                    <h2 class="text-lg font-bold text-white">Gerenciar Clientes</h2>
-                    <p class="text-xs text-slate-500">Adicione e gerencie contas de anuncios</p>
+                    <h2 class="text-base sm:text-lg font-bold text-white">Gerenciar Clientes</h2>
+                    <p class="text-[11px] sm:text-xs text-slate-500">Adicione e gerencie contas de anuncios</p>
                 </div>
             </div>
             <button onclick="closeClientsModal()" class="p-2 text-slate-400 hover:text-white hover:bg-background-dark rounded-lg transition-colors">
@@ -943,7 +973,7 @@
         </div>
 
         <!-- Content -->
-        <div class="p-6 overflow-y-auto flex-1">
+        <div class="p-4 sm:p-6 overflow-y-auto flex-1">
             <!-- Formulario de Adicionar Cliente -->
             <div class="bg-background-dark border border-border-dark rounded-xl p-4 mb-6">
                 <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2">
@@ -1002,7 +1032,7 @@
                             <!-- Excelente -->
                             <div class="flex items-center gap-2">
                                 <span class="w-2 h-2 bg-emerald-400 rounded-full shrink-0"></span>
-                                <span class="text-[11px] font-medium text-emerald-400 w-[70px] shrink-0">Excelente</span>
+                                <span class="text-[11px] font-medium text-emerald-400 w-[60px] shrink-0">Excelente</span>
                                 <span class="text-[11px] text-slate-500 shrink-0">CPL &le;</span>
                                 <span class="text-[11px] text-slate-500 shrink-0 cpl-currency-symbol">R$</span>
                                 <input type="number" id="cplExcellent" step="0.01" min="0"
@@ -1013,7 +1043,7 @@
                             <!-- Saudavel -->
                             <div class="flex items-center gap-2">
                                 <span class="w-2 h-2 bg-blue-400 rounded-full shrink-0"></span>
-                                <span class="text-[11px] font-medium text-blue-400 w-[70px] shrink-0">Saudavel</span>
+                                <span class="text-[11px] font-medium text-blue-400 w-[60px] shrink-0">Saudavel</span>
                                 <span class="text-[11px] text-slate-500 shrink-0">CPL &le;</span>
                                 <span class="text-[11px] text-slate-500 shrink-0 cpl-currency-symbol">R$</span>
                                 <input type="number" id="cplHealthy" step="0.01" min="0"
@@ -1024,7 +1054,7 @@
                             <!-- Atencao -->
                             <div class="flex items-center gap-2">
                                 <span class="w-2 h-2 bg-amber-400 rounded-full shrink-0"></span>
-                                <span class="text-[11px] font-medium text-amber-400 w-[70px] shrink-0">Atencao</span>
+                                <span class="text-[11px] font-medium text-amber-400 w-[60px] shrink-0">Atencao</span>
                                 <span class="text-[11px] text-slate-500 shrink-0">CPL &le;</span>
                                 <span class="text-[11px] text-slate-500 shrink-0 cpl-currency-symbol">R$</span>
                                 <input type="number" id="cplWarning" step="0.01" min="0"
@@ -1035,7 +1065,7 @@
                             <!-- Critico -->
                             <div class="flex items-center gap-2">
                                 <span class="w-2 h-2 bg-red-400 rounded-full shrink-0"></span>
-                                <span class="text-[11px] font-medium text-red-400 w-[70px] shrink-0">Critico</span>
+                                <span class="text-[11px] font-medium text-red-400 w-[60px] shrink-0">Critico</span>
                                 <span class="text-[11px] text-slate-500">acima do valor de Atencao</span>
                             </div>
 
