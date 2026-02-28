@@ -2009,13 +2009,20 @@ function setPhoneFromFull(inputId, countrySelectId, fullNumber) {
 async function callWhatsAppAPI(action, data = {}) {
     const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
     const password = currentAdminPassword || '';
-    const resp = await fetch(`${baseUrl}/.netlify/functions/whatsapp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, password, ...data })
-    });
-    const result = await resp.json();
-    if (!resp.ok || result.error) throw new Error(result.error || 'Erro na API WhatsApp');
+    let resp, result;
+    try {
+        resp = await fetch(`${baseUrl}/.netlify/functions/whatsapp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, password, ...data })
+        });
+        result = await resp.json();
+    } catch (e) {
+        throw new Error('Falha na conexao com o servidor');
+    }
+    if (!resp.ok || result.error) {
+        throw new Error(result.error || `Erro HTTP ${resp.status}`);
+    }
     return result;
 }
 
