@@ -245,12 +245,34 @@ async function sendText(apiUrl, apiKey, instance, number, text) {
         },
         body: JSON.stringify({
             number: cleanNumber,
-            textMessage: { text: text }
+            text: text
         })
     });
     const data = await resp.json();
 
-    if (data.error) throw new Error(data.error.message || 'Erro ao enviar mensagem');
+    if (data.error || data.status >= 400) {
+        // Extrair mensagem de erro da Evolution API
+        let errMsg = 'Erro ao enviar mensagem';
+        if (data.response?.message) {
+            const msg = data.response.message;
+            if (Array.isArray(msg)) {
+                // Verificar se é erro de numero inexistente
+                const notFound = msg.find(m => m && typeof m === 'object' && m.exists === false);
+                if (notFound) {
+                    errMsg = `Numero ${notFound.number || ''} nao encontrado no WhatsApp`;
+                } else {
+                    errMsg = JSON.stringify(msg);
+                }
+            } else {
+                errMsg = String(msg);
+            }
+        } else if (typeof data.error === 'string') {
+            errMsg = data.error;
+        } else if (data.error?.message) {
+            errMsg = data.error.message;
+        }
+        throw new Error(errMsg);
+    }
 
     return {
         sent: true,
