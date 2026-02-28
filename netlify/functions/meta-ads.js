@@ -143,6 +143,12 @@ exports.handler = async (event, context) => {
                 break;
             }
 
+            case 'leadgen-forms': {
+                // Buscar formulários de lead ativos da conta
+                result = await fetchLeadgenForms(formattedAccountId, accessToken);
+                break;
+            }
+
             default:
                 // Buscar insights (comportamento padrão)
                 result = await fetchInsights(formattedAccountId, accessToken, params);
@@ -1301,4 +1307,42 @@ async function searchTargetingInterests(query, accessToken) {
             path: i.path || []
         }))
     };
+}
+
+async function fetchLeadgenForms(accountId, accessToken) {
+    // Buscar formulários de lead ativos da conta
+    const formsUrl = `${META_API_BASE}/${accountId}/leadgen_forms?fields=id,name,status,leads_count,created_time&limit=100&access_token=${accessToken}`;
+    const formsResp = await fetch(formsUrl);
+    const formsData = await formsResp.json();
+
+    if (formsData.error) throw new Error(formsData.error.message);
+
+    const forms = [];
+    for (const form of (formsData.data || [])) {
+        // Buscar campos (questions) de cada formulário
+        let questions = [];
+        try {
+            const qUrl = `${META_API_BASE}/${form.id}?fields=questions&access_token=${accessToken}`;
+            const qResp = await fetch(qUrl);
+            const qData = await qResp.json();
+            questions = (qData.questions || []).map(q => ({
+                key: q.key,
+                label: q.label,
+                type: q.type
+            }));
+        } catch (e) {
+            // Se falhar ao buscar campos, continua sem eles
+        }
+
+        forms.push({
+            id: form.id,
+            name: form.name,
+            status: form.status,
+            leadsCount: form.leads_count || 0,
+            createdTime: form.created_time,
+            questions
+        });
+    }
+
+    return { forms };
 }

@@ -2881,24 +2881,29 @@ function switchPanel(panel) {
     const panelMetricas = document.getElementById('panelMetricas');
     const panelRelatorios = document.getElementById('panelRelatorios');
     const panelWhatsApp = document.getElementById('panelWhatsApp');
+    const panelLeadPush = document.getElementById('panelLeadPush');
     const headerVisaoGeral = document.getElementById('headerVisaoGeral');
     const headerMetricas = document.getElementById('headerMetricas');
     const headerRelatorios = document.getElementById('headerRelatorios');
     const headerWhatsApp = document.getElementById('headerWhatsApp');
+    const headerLeadPush = document.getElementById('headerLeadPush');
     const navVisaoGeral = document.getElementById('navVisaoGeral');
     const navMetricas = document.getElementById('navMetricas');
     const navRelatorios = document.getElementById('navRelatorios');
     const navWhatsApp = document.getElementById('navWhatsApp');
+    const navLeadPush = document.getElementById('navLeadPush');
 
     // Esconder todos os paineis e headers
     panelVisaoGeral.classList.add('hidden');
     panelMetricas.classList.add('hidden');
     panelRelatorios.classList.add('hidden');
     if (panelWhatsApp) panelWhatsApp.classList.add('hidden');
+    if (panelLeadPush) panelLeadPush.classList.add('hidden');
     headerVisaoGeral.classList.add('hidden');
     headerMetricas.classList.add('hidden');
     headerRelatorios.classList.add('hidden');
     if (headerWhatsApp) headerWhatsApp.classList.add('hidden');
+    if (headerLeadPush) headerLeadPush.classList.add('hidden');
 
     // Resetar todos os navs
     [navVisaoGeral, navMetricas, navRelatorios].filter(Boolean).forEach(nav => {
@@ -2910,6 +2915,11 @@ function switchPanel(panel) {
         navWhatsApp.classList.remove('sidebar-item-active');
         navWhatsApp.classList.add('text-slate-400', 'hover:text-white');
         navWhatsApp.querySelector('.material-symbols-outlined').style.fontVariationSettings = '';
+    }
+    if (navLeadPush) {
+        navLeadPush.classList.remove('sidebar-item-active');
+        navLeadPush.classList.add('text-slate-400', 'hover:text-white');
+        navLeadPush.querySelector('.material-symbols-outlined').style.fontVariationSettings = '';
     }
 
     // Ativar o painel selecionado
@@ -2946,6 +2956,15 @@ function switchPanel(panel) {
             navWhatsApp.querySelector('.material-symbols-outlined').style.fontVariationSettings = "'FILL' 1";
         }
         loadWhatsAppStatus();
+    } else if (panel === 'lead-push') {
+        if (panelLeadPush) panelLeadPush.classList.remove('hidden');
+        if (headerLeadPush) headerLeadPush.classList.remove('hidden');
+        if (navLeadPush) {
+            navLeadPush.classList.add('sidebar-item-active');
+            navLeadPush.classList.remove('text-slate-400', 'hover:text-white');
+            navLeadPush.querySelector('.material-symbols-outlined').style.fontVariationSettings = "'FILL' 1";
+        }
+        loadLeadPushPanel();
     }
 
     // Fechar sidebar no mobile
@@ -5424,5 +5443,377 @@ async function sendTestReport() {
         }
     } catch (err) {
         showToast('Erro ao enviar relatorio: ' + err.message, 'error');
+    }
+}
+
+// ==========================================
+// LEAD PUSH
+// ==========================================
+
+let lpCurrentClientId = null;
+let lpCurrentFormId = null;
+let lpCurrentQuestions = [];
+let lpFormsCache = {};
+let lpConfigCache = {};
+
+function loadLeadPushPanel() {
+    const select = document.getElementById('lpClientSelect');
+    if (!select) return;
+
+    // Preservar selecao atual
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">Selecione um cliente...</option>';
+
+    const clients = clientsCache || [];
+    clients.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name;
+        select.appendChild(opt);
+    });
+
+    if (currentVal) {
+        select.value = currentVal;
+    }
+}
+
+async function onLeadPushClientChange() {
+    const select = document.getElementById('lpClientSelect');
+    const clientId = select.value;
+    const formsSection = document.getElementById('lpFormsSection');
+    const editorSection = document.getElementById('lpEditorSection');
+
+    // Esconder editor ao trocar cliente
+    if (editorSection) editorSection.classList.add('hidden');
+
+    if (!clientId) {
+        if (formsSection) formsSection.classList.add('hidden');
+        lpCurrentClientId = null;
+        return;
+    }
+
+    lpCurrentClientId = clientId;
+    if (formsSection) formsSection.classList.remove('hidden');
+
+    await loadClientForms(clientId);
+}
+
+async function loadClientForms(clientId) {
+    const loading = document.getElementById('lpFormsLoading');
+    const empty = document.getElementById('lpFormsEmpty');
+    const list = document.getElementById('lpFormsList');
+
+    if (loading) loading.classList.remove('hidden');
+    if (empty) empty.classList.add('hidden');
+    if (list) list.innerHTML = '';
+
+    // Buscar adAccountId do cliente
+    const client = (clientsCache || []).find(c => c.id === clientId);
+    if (!client || !client.adAccountId) {
+        if (loading) loading.classList.add('hidden');
+        if (empty) {
+            empty.classList.remove('hidden');
+            empty.querySelector('p').textContent = 'Cliente sem conta de anuncios configurada';
+        }
+        return;
+    }
+
+    try {
+        // Buscar formularios e config em paralelo
+        const [formsResp, configResp] = await Promise.all([
+            fetch(`/api/meta-ads?adAccountId=${client.adAccountId}&action=leadgen-forms`),
+            callWhatsAppAPI('get-lead-config', { clientId })
+        ]);
+
+        const formsData = await formsResp.json();
+        const configData = configResp;
+
+        if (loading) loading.classList.add('hidden');
+
+        if (!formsData.success || !formsData.forms || formsData.forms.length === 0) {
+            if (empty) empty.classList.remove('hidden');
+            return;
+        }
+
+        lpFormsCache[clientId] = formsData.forms;
+        lpConfigCache[clientId] = configData?.config || { forms: {} };
+
+        renderFormsList(formsData.forms, lpConfigCache[clientId]);
+    } catch (err) {
+        if (loading) loading.classList.add('hidden');
+        if (empty) {
+            empty.classList.remove('hidden');
+            empty.querySelector('p').textContent = 'Erro ao buscar formularios: ' + err.message;
+        }
+    }
+}
+
+function renderFormsList(forms, config) {
+    const list = document.getElementById('lpFormsList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    forms.forEach(form => {
+        const formConfig = config.forms?.[form.id] || {};
+        const isEnabled = formConfig.enabled === true;
+        const hasTemplate = !!formConfig.template;
+
+        const fieldsText = form.questions.map(q => q.label || q.key).join(', ');
+
+        const card = document.createElement('div');
+        card.className = 'bg-background-dark border border-border-dark rounded-xl p-4 hover:border-slate-600 transition-colors';
+        card.innerHTML = `
+            <div class="flex items-start justify-between gap-3">
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <span class="material-symbols-outlined text-base ${isEnabled ? 'text-green-400' : 'text-slate-600'}">${isEnabled ? 'check_circle' : 'radio_button_unchecked'}</span>
+                        <h4 class="text-sm font-semibold text-white truncate">${form.name}</h4>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-2">
+                        <span class="text-slate-600">Campos:</span> ${fieldsText || 'Nenhum campo'}
+                    </p>
+                    <div class="flex items-center gap-3 text-[10px] text-slate-600">
+                        <span>${form.leadsCount || 0} leads</span>
+                        ${hasTemplate ? '<span class="text-purple-400/60">Template configurado</span>' : '<span class="text-orange-400/60">Sem template</span>'}
+                    </div>
+                </div>
+                <button data-form-id="${form.id}" class="lp-configure-btn flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 hover:border-purple-500/40 text-purple-400 rounded-lg text-xs font-semibold transition-all shrink-0">
+                    <span class="material-symbols-outlined text-sm">edit</span>
+                    Configurar
+                </button>
+            </div>
+        `;
+
+        // Bind click via JS (evita problemas com quotes no HTML)
+        const btn = card.querySelector('.lp-configure-btn');
+        btn.addEventListener('click', () => openTemplateEditor(form.id, form.name, form.questions));
+
+        list.appendChild(card);
+    });
+}
+
+function openTemplateEditor(formId, formName, questions) {
+    // Se questions veio como string (do HTML), parse
+    if (typeof questions === 'string') {
+        try { questions = JSON.parse(questions); } catch (e) { questions = []; }
+    }
+
+    lpCurrentFormId = formId;
+    lpCurrentQuestions = questions || [];
+
+    const editorSection = document.getElementById('lpEditorSection');
+    const formNameEl = document.getElementById('lpEditorFormName');
+    const variableButtons = document.getElementById('lpVariableButtons');
+    const textarea = document.getElementById('lpTemplateText');
+    const enabledToggle = document.getElementById('lpFormEnabled');
+
+    if (editorSection) editorSection.classList.remove('hidden');
+    if (formNameEl) formNameEl.textContent = formName;
+
+    // Renderizar botoes de variaveis
+    if (variableButtons) {
+        variableButtons.innerHTML = '';
+        lpCurrentQuestions.forEach(q => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'px-2.5 py-1 bg-purple-500/10 border border-purple-500/20 text-purple-300 rounded-md text-xs font-mono hover:bg-purple-500/20 transition-colors';
+            btn.textContent = `{{${q.key}}}`;
+            btn.onclick = () => insertVariable(q.key);
+            variableButtons.appendChild(btn);
+        });
+    }
+
+    // Carregar template salvo ou padrao
+    const config = lpConfigCache[lpCurrentClientId]?.forms?.[formId] || {};
+    if (config.template) {
+        if (textarea) textarea.value = config.template;
+    } else {
+        // Template padrao
+        let defaultTemplate = '\uD83D\uDD14 *Novo Lead Recebido!*\n\n';
+        lpCurrentQuestions.forEach(q => {
+            const icon = q.type === 'FULL_NAME' ? '\uD83D\uDC64' : q.type === 'EMAIL' ? '\uD83D\uDCE7' : q.type === 'PHONE' ? '\uD83D\uDCF1' : '\uD83D\uDCCB';
+            defaultTemplate += `${icon} ${q.label || q.key}: {{${q.key}}}\n`;
+        });
+        defaultTemplate += '\n_Dashboard Milo_';
+        if (textarea) textarea.value = defaultTemplate;
+    }
+
+    if (enabledToggle) enabledToggle.checked = config.enabled !== false;
+
+    // Verificar se cliente tem whatsapp
+    const client = (clientsCache || []).find(c => c.id === lpCurrentClientId);
+    const testBtn = document.getElementById('lpTestBtn');
+    if (testBtn) {
+        if (!client?.whatsappNumber) {
+            testBtn.disabled = true;
+            testBtn.classList.add('opacity-30', 'cursor-not-allowed');
+            testBtn.title = 'Cliente sem WhatsApp cadastrado';
+        } else {
+            testBtn.disabled = false;
+            testBtn.classList.remove('opacity-30', 'cursor-not-allowed');
+            testBtn.title = '';
+        }
+    }
+
+    updateTemplatePreview();
+
+    // Scroll para o editor
+    editorSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function closeTemplateEditor() {
+    const editorSection = document.getElementById('lpEditorSection');
+    if (editorSection) editorSection.classList.add('hidden');
+    lpCurrentFormId = null;
+}
+
+function insertVariable(key) {
+    const textarea = document.getElementById('lpTemplateText');
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const insertion = `{{${key}}}`;
+
+    textarea.value = text.substring(0, start) + insertion + text.substring(end);
+    textarea.selectionStart = textarea.selectionEnd = start + insertion.length;
+    textarea.focus();
+
+    updateTemplatePreview();
+}
+
+function updateTemplatePreview() {
+    const textarea = document.getElementById('lpTemplateText');
+    const preview = document.getElementById('lpTemplatePreview');
+    if (!textarea || !preview) return;
+
+    let text = textarea.value;
+    if (!text.trim()) {
+        preview.innerHTML = '<span class="text-slate-600 italic">A preview aparecera aqui...</span>';
+        return;
+    }
+
+    // Dados ficticios para preview
+    const sampleData = {
+        'full_name': 'Maria Silva',
+        'email': 'maria@email.com',
+        'phone_number': '(11) 99999-8888',
+        'city': 'Sao Paulo',
+        'state': 'SP',
+        'zip': '01001-000',
+        'street_address': 'Rua Example, 123',
+        'job_title': 'Analista',
+        'company_name': 'Empresa XYZ',
+        'date_of_birth': '15/03/1990'
+    };
+
+    // Substituir variaveis
+    text = text.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+        return sampleData[key] || `[${key}]`;
+    });
+
+    // Escapar HTML
+    text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // Formatar WhatsApp markup
+    text = text.replace(/\*([^*]+)\*/g, '<strong class="text-white">$1</strong>');
+    text = text.replace(/_([^_]+)_/g, '<em>$1</em>');
+    text = text.replace(/~([^~]+)~/g, '<del>$1</del>');
+
+    preview.innerHTML = text;
+}
+
+async function saveLeadTemplate() {
+    if (!lpCurrentClientId || !lpCurrentFormId) {
+        showToast('Selecione um formulario', 'error');
+        return;
+    }
+
+    const textarea = document.getElementById('lpTemplateText');
+    const enabledToggle = document.getElementById('lpFormEnabled');
+    if (!textarea) return;
+
+    try {
+        const result = await callWhatsAppAPI('save-lead-config', {
+            clientId: lpCurrentClientId,
+            formId: lpCurrentFormId,
+            config: {
+                enabled: enabledToggle ? enabledToggle.checked : true,
+                template: textarea.value
+            }
+        });
+
+        if (result.saved) {
+            // Atualizar cache local
+            if (!lpConfigCache[lpCurrentClientId]) lpConfigCache[lpCurrentClientId] = { forms: {} };
+            lpConfigCache[lpCurrentClientId].forms[lpCurrentFormId] = {
+                enabled: enabledToggle ? enabledToggle.checked : true,
+                template: textarea.value
+            };
+
+            // Re-renderizar lista
+            const forms = lpFormsCache[lpCurrentClientId] || [];
+            renderFormsList(forms, lpConfigCache[lpCurrentClientId]);
+
+            showToast('Template salvo com sucesso!', 'success');
+        } else {
+            showToast('Erro ao salvar template', 'error');
+        }
+    } catch (err) {
+        showToast('Erro ao salvar: ' + err.message, 'error');
+    }
+}
+
+async function sendLeadTestMessage() {
+    if (!lpCurrentClientId || !lpCurrentFormId) {
+        showToast('Selecione um formulario', 'error');
+        return;
+    }
+
+    const client = (clientsCache || []).find(c => c.id === lpCurrentClientId);
+    if (!client?.whatsappNumber) {
+        showToast('Cliente sem WhatsApp cadastrado', 'error');
+        return;
+    }
+
+    const textarea = document.getElementById('lpTemplateText');
+    if (!textarea || !textarea.value.trim()) {
+        showToast('Template vazio', 'error');
+        return;
+    }
+
+    // Dados ficticios
+    const sampleData = {
+        'full_name': 'Maria Silva (TESTE)',
+        'email': 'teste@email.com',
+        'phone_number': '(11) 99999-0000',
+        'city': 'Sao Paulo',
+        'state': 'SP',
+        'zip': '01001-000',
+        'street_address': 'Rua Teste, 123',
+        'job_title': 'Teste',
+        'company_name': 'Empresa Teste',
+        'date_of_birth': '01/01/2000'
+    };
+
+    let message = textarea.value;
+    message = message.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+        return sampleData[key] || `[${key}]`;
+    });
+
+    try {
+        const result = await callWhatsAppAPI('send-text', {
+            number: client.whatsappNumber,
+            text: message
+        });
+
+        if (result.sent) {
+            showToast('Mensagem de teste enviada!', 'success');
+        } else {
+            showToast('Erro ao enviar teste', 'error');
+        }
+    } catch (err) {
+        showToast('Erro ao enviar: ' + err.message, 'error');
     }
 }

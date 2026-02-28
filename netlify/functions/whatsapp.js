@@ -2,6 +2,8 @@
 // Gerenciamento de conexao + envio de mensagens e relatorios
 // Configuracoes sensiveis em variaveis de ambiente (Netlify)
 
+const { getStore } = require('@netlify/blobs');
+
 exports.handler = async (event, context) => {
     const headers = {
         'Access-Control-Allow-Origin': '*',
@@ -47,6 +49,21 @@ exports.handler = async (event, context) => {
                         instanceName: INSTANCE
                     }
                 })
+            };
+        }
+
+        // Actions de Lead Push usam Netlify Blobs (nao precisam de Evolution API)
+        if (action === 'get-lead-config' || action === 'save-lead-config') {
+            let result;
+            if (action === 'get-lead-config') {
+                result = await getLeadConfig(body.clientId);
+            } else {
+                result = await saveLeadConfig(body.clientId, body.formId, body.config);
+            }
+            return {
+                statusCode: 200,
+                headers,
+                body: JSON.stringify({ success: true, ...result })
             };
         }
 
@@ -307,4 +324,40 @@ function fmtNum(val) {
 function fmtInt(val) {
     if (val === null || val === undefined) return '0';
     return Number(val).toLocaleString('pt-BR');
+}
+
+// ==========================================
+// LEAD PUSH CONFIG (Netlify Blobs)
+// ==========================================
+
+async function getLeadConfig(clientId) {
+    if (!clientId) throw new Error('clientId e obrigatorio');
+    const store = getStore('lead-push');
+    try {
+        const data = await store.get(`config_${clientId}`, { type: 'json' });
+        return { config: data || { forms: {} } };
+    } catch (e) {
+        return { config: { forms: {} } };
+    }
+}
+
+async function saveLeadConfig(clientId, formId, formConfig) {
+    if (!clientId) throw new Error('clientId e obrigatorio');
+    if (!formId) throw new Error('formId e obrigatorio');
+
+    const store = getStore('lead-push');
+    let existing = { forms: {} };
+    try {
+        const data = await store.get(`config_${clientId}`, { type: 'json' });
+        if (data) existing = data;
+    } catch (e) {}
+
+    existing.forms[formId] = {
+        enabled: formConfig.enabled !== undefined ? formConfig.enabled : true,
+        template: formConfig.template || '',
+        updatedAt: new Date().toISOString()
+    };
+
+    await store.setJSON(`config_${clientId}`, existing);
+    return { saved: true, config: existing };
 }
