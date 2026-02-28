@@ -330,9 +330,16 @@ function fmtInt(val) {
 // LEAD PUSH CONFIG (Netlify Blobs)
 // ==========================================
 
+function getLeadPushStore() {
+    if (process.env.SITE_ID && process.env.NETLIFY_API_TOKEN) {
+        return getStore({ name: 'lead-push', siteID: process.env.SITE_ID, token: process.env.NETLIFY_API_TOKEN, consistency: 'strong' });
+    }
+    return getStore({ name: 'lead-push', consistency: 'strong' });
+}
+
 async function getLeadConfig(clientId) {
     if (!clientId) throw new Error('clientId e obrigatorio');
-    const store = getStore('lead-push');
+    const store = getLeadPushStore();
     try {
         const data = await store.get(`config_${clientId}`, { type: 'json' });
         return { config: data || { forms: {} } };
@@ -345,7 +352,7 @@ async function saveLeadConfig(clientId, formId, formConfig) {
     if (!clientId) throw new Error('clientId e obrigatorio');
     if (!formId) throw new Error('formId e obrigatorio');
 
-    const store = getStore('lead-push');
+    const store = getLeadPushStore();
     let existing = { forms: {} };
     try {
         const data = await store.get(`config_${clientId}`, { type: 'json' });
