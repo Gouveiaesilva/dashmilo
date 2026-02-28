@@ -983,9 +983,22 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-medium text-slate-400 mb-1.5">Numero (com DDD)</label>
-                        <input type="tel" id="waTestNumber" placeholder="55 (11) 99999-9999" maxlength="19"
-                            oninput="formatPhoneInput(this)"
-                            class="w-full bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors">
+                        <div class="flex gap-2">
+                            <select id="waTestCountry" class="bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors w-[90px] flex-shrink-0">
+                                <option value="55" selected>+55</option>
+                                <option value="1">+1</option>
+                                <option value="351">+351</option>
+                                <option value="54">+54</option>
+                                <option value="56">+56</option>
+                                <option value="57">+57</option>
+                                <option value="52">+52</option>
+                                <option value="44">+44</option>
+                                <option value="34">+34</option>
+                            </select>
+                            <input type="tel" id="waTestNumber" placeholder="(11) 99999-9999" maxlength="16"
+                                oninput="formatPhoneLocal(this)"
+                                class="w-full bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors">
+                        </div>
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-slate-400 mb-1.5">Mensagem</label>
@@ -1294,15 +1307,25 @@
                     <!-- WhatsApp -->
                     <div class="sm:col-span-2">
                         <label class="block text-xs font-medium text-slate-400 mb-1.5">WhatsApp (opcional)</label>
-                        <div class="relative">
-                            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 text-base">chat</span>
+                        <div class="flex gap-2">
+                            <select id="clientWhatsappCountry" class="bg-surface-dark border border-border-dark text-white rounded-lg py-2.5 px-2 text-sm focus:ring-2 focus:ring-primary focus:border-primary transition-colors w-[90px] flex-shrink-0">
+                                <option value="55" selected>+55</option>
+                                <option value="1">+1</option>
+                                <option value="351">+351</option>
+                                <option value="54">+54</option>
+                                <option value="56">+56</option>
+                                <option value="57">+57</option>
+                                <option value="52">+52</option>
+                                <option value="44">+44</option>
+                                <option value="34">+34</option>
+                            </select>
                             <input
                                 type="tel"
                                 id="clientWhatsapp"
-                                maxlength="19"
-                                oninput="formatPhoneInput(this)"
-                                class="w-full bg-surface-dark border border-border-dark text-white rounded-lg py-2.5 pl-9 pr-3 text-sm focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
-                                placeholder="55 (11) 99999-9999"
+                                maxlength="16"
+                                oninput="formatPhoneLocal(this)"
+                                class="w-full bg-surface-dark border border-border-dark text-white rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
+                                placeholder="(11) 99999-9999"
                             >
                         </div>
                         <p class="text-[10px] text-slate-600 mt-1">Formato: 55 + DDD + numero (sem espacos). Ex: 5511999999999</p>

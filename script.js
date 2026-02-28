@@ -895,7 +895,7 @@ async function addClient(event) {
     let result;
 
     // Coletar campos opcionais
-    const whatsappNumber = getCleanPhone('clientWhatsapp') || null;
+    const whatsappNumber = getCleanPhone('clientWhatsapp', 'clientWhatsappCountry') || null;
     const googleChatWebhook = document.getElementById('googleChatWebhook').value.trim() || null;
 
     if (editingClientId) {
@@ -936,6 +936,7 @@ async function addClient(event) {
         document.getElementById('cplBandsArrow').style.transform = '';
         document.getElementById('cplPreview').classList.add('hidden');
         document.getElementById('clientWhatsapp').value = '';
+        document.getElementById('clientWhatsappCountry').value = '55';
         document.getElementById('googleChatWebhook').value = '';
 
         showToast(wasEditing ? 'Cliente atualizado com sucesso!' : 'Cliente adicionado com sucesso!');
@@ -991,10 +992,8 @@ async function editClient(clientId) {
         document.getElementById('cplWarning').value = '';
     }
 
-    // Preencher WhatsApp (formatado)
-    const waInput = document.getElementById('clientWhatsapp');
-    waInput.value = client.whatsappNumber || '';
-    if (waInput.value) formatPhoneInput(waInput);
+    // Preencher WhatsApp (formatado com seletor de pais)
+    setPhoneFromFull('clientWhatsapp', 'clientWhatsappCountry', client.whatsappNumber || '');
 
     // Preencher webhook
     document.getElementById('googleChatWebhook').value = client.googleChatWebhook || '';
@@ -1025,6 +1024,7 @@ function cancelEditClient() {
     document.getElementById('cplBandsArrow').style.transform = '';
     document.getElementById('cplPreview').classList.add('hidden');
     document.getElementById('clientWhatsapp').value = '';
+    document.getElementById('clientWhatsappCountry').value = '55';
     document.getElementById('googleChatWebhook').value = '';
 
     updateFormMode();
@@ -1960,23 +1960,50 @@ async function submitUploadCreative() {
 let waQrPollingInterval = null;
 let waQrCountdownInterval = null;
 
-// Formatacao de telefone: 55 (11) 99999-9999
-function formatPhoneInput(input) {
+// Formatacao de telefone local: (11) 99999-9999
+function formatPhoneLocal(input) {
     let digits = input.value.replace(/\D/g, '');
-    if (digits.length > 13) digits = digits.slice(0, 13);
+    if (digits.length > 11) digits = digits.slice(0, 11);
 
     let formatted = '';
-    if (digits.length > 0) formatted = digits.slice(0, 2);
-    if (digits.length > 2) formatted += ' (' + digits.slice(2, 4);
-    if (digits.length > 4) formatted += ') ' + digits.slice(4, 9);
-    if (digits.length > 9) formatted += '-' + digits.slice(9, 13);
+    if (digits.length > 0) formatted = '(' + digits.slice(0, 2);
+    if (digits.length > 2) formatted += ') ' + digits.slice(2, 7);
+    if (digits.length > 7) formatted += '-' + digits.slice(7, 11);
 
     input.value = formatted;
 }
 
-function getCleanPhone(inputId) {
+// Retorna numero completo: codigo pais + numero local (so digitos)
+function getCleanPhone(inputId, countrySelectId) {
     const el = document.getElementById(inputId);
-    return el ? el.value.replace(/\D/g, '') : '';
+    const countryEl = document.getElementById(countrySelectId);
+    const local = el ? el.value.replace(/\D/g, '') : '';
+    const country = countryEl ? countryEl.value : '55';
+    return local ? country + local : '';
+}
+
+// Preencher campo de telefone a partir de numero completo (ex: 5511999999999)
+function setPhoneFromFull(inputId, countrySelectId, fullNumber) {
+    if (!fullNumber) return;
+    const digits = String(fullNumber).replace(/\D/g, '');
+    const countryEl = document.getElementById(countrySelectId);
+    const input = document.getElementById(inputId);
+    if (!countryEl || !input) return;
+
+    // Detectar codigo do pais
+    const countryCodes = ['351', '55', '54', '56', '57', '52', '44', '34', '1'];
+    let matched = '55';
+    let local = digits;
+    for (const code of countryCodes) {
+        if (digits.startsWith(code)) {
+            matched = code;
+            local = digits.slice(code.length);
+            break;
+        }
+    }
+    countryEl.value = matched;
+    input.value = local;
+    formatPhoneLocal(input);
 }
 
 async function callWhatsAppAPI(action, data = {}) {
@@ -2133,7 +2160,7 @@ async function disconnectWhatsApp() {
 }
 
 async function sendWhatsAppTest() {
-    const number = getCleanPhone('waTestNumber');
+    const number = getCleanPhone('waTestNumber', 'waTestCountry');
     const message = document.getElementById('waTestMessage').value.trim();
     const btn = document.getElementById('waTestSendBtn');
     const resultEl = document.getElementById('waTestResult');
