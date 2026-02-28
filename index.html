@@ -1014,43 +1014,38 @@
                 </div>
             </div>
 
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-xs font-medium text-slate-400 mb-1.5">URL da Evolution API</label>
-                    <input type="url" id="waConfigUrl"
-                        class="w-full bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-3 text-sm font-mono focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors"
-                        placeholder="http://132.145.XXX.XXX:8080">
-                    <p class="text-[10px] text-slate-600 mt-1">Ex: http://seu-ip:8080 ou https://whatsapp.seudominio.com</p>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-medium text-slate-400 mb-1.5">Chave da API (apikey)</label>
-                    <div class="relative">
-                        <input type="password" id="waConfigKey"
-                            class="w-full bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-3 pr-10 text-sm font-mono focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors"
-                            placeholder="Sua chave secreta">
-                        <button type="button" onclick="toggleWaKeyVisibility()" class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-white transition-colors">
-                            <span id="waKeyToggleIcon" class="material-symbols-outlined text-sm">visibility</span>
-                        </button>
+            <div class="space-y-3" id="waConfigItems">
+                <div class="flex items-center justify-between py-2.5 px-3 bg-background-dark border border-border-dark rounded-lg">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm text-slate-500">link</span>
+                        <span class="text-xs text-slate-400">URL da API</span>
                     </div>
-                    <p class="text-[10px] text-slate-600 mt-1">AUTHENTICATION_API_KEY definida no docker-compose da Evolution API</p>
+                    <span id="waConfigUrlStatus" class="flex items-center gap-1 text-xs font-medium text-slate-500">
+                        <span class="material-symbols-outlined text-sm">hourglass_empty</span> Verificando...
+                    </span>
                 </div>
 
-                <div>
-                    <label class="block text-xs font-medium text-slate-400 mb-1.5">Nome da Instancia</label>
-                    <input type="text" id="waConfigInstance"
-                        class="w-full bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-3 text-sm font-mono focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors"
-                        placeholder="dashboard-milo" value="dashboard-milo">
-                    <p class="text-[10px] text-slate-600 mt-1">Nome usado ao criar a instancia na Evolution API</p>
+                <div class="flex items-center justify-between py-2.5 px-3 bg-background-dark border border-border-dark rounded-lg">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm text-slate-500">key</span>
+                        <span class="text-xs text-slate-400">Chave da API</span>
+                    </div>
+                    <span id="waConfigKeyStatus" class="flex items-center gap-1 text-xs font-medium text-slate-500">
+                        <span class="material-symbols-outlined text-sm">hourglass_empty</span> Verificando...
+                    </span>
                 </div>
 
-                <div class="flex items-center gap-3 pt-1">
-                    <button id="waConfigSaveBtn" onclick="saveWhatsAppConfig()" class="flex items-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
-                        <span class="material-symbols-outlined text-lg">save</span>
-                        Salvar Configuracoes
-                    </button>
-                    <span id="waConfigStatus" class="text-xs font-medium"></span>
+                <div class="flex items-center justify-between py-2.5 px-3 bg-background-dark border border-border-dark rounded-lg">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm text-slate-500">terminal</span>
+                        <span class="text-xs text-slate-400">Instancia</span>
+                    </div>
+                    <span id="waConfigInstanceStatus" class="flex items-center gap-1 text-xs font-medium text-slate-500">
+                        <span class="material-symbols-outlined text-sm">hourglass_empty</span> Verificando...
+                    </span>
                 </div>
+
+                <p class="text-[10px] text-slate-600 pt-1">As credenciais sao gerenciadas com seguranca nas variaveis de ambiente do Netlify.</p>
             </div>
         </div>
 

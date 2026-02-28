@@ -2008,94 +2008,32 @@ async function loadWhatsAppStatus() {
 }
 
 async function loadWhatsAppConfig() {
+    const urlStatus = document.getElementById('waConfigUrlStatus');
+    const keyStatus = document.getElementById('waConfigKeyStatus');
+    const instanceStatus = document.getElementById('waConfigInstanceStatus');
+
+    function setStatus(el, ok, label) {
+        if (!el) return;
+        if (ok) {
+            el.className = 'flex items-center gap-1 text-xs font-medium text-green-400';
+            el.innerHTML = `<span class="material-symbols-outlined text-sm">check_circle</span> ${label}`;
+        } else {
+            el.className = 'flex items-center gap-1 text-xs font-medium text-red-400';
+            el.innerHTML = `<span class="material-symbols-outlined text-sm">cancel</span> Nao configurada`;
+        }
+    }
+
     try {
         const result = await callWhatsAppAPI('get-config');
         if (result.config) {
-            document.getElementById('waConfigUrl').value = result.config.apiUrl || '';
-            document.getElementById('waConfigInstance').value = result.config.instanceName || 'dashboard-milo';
-            // Chave: mostrar placeholder se existe
-            const keyInput = document.getElementById('waConfigKey');
-            if (result.config.hasApiKey) {
-                keyInput.placeholder = '••••••••  (chave salva)';
-            }
-            // Status
-            const statusEl = document.getElementById('waConfigStatus');
-            if (result.config.apiUrl) {
-                statusEl.innerHTML = '<span class="text-green-400 flex items-center gap-1"><span class="material-symbols-outlined text-sm">check_circle</span> Configurado</span>';
-            } else {
-                statusEl.innerHTML = '<span class="text-amber-400 flex items-center gap-1"><span class="material-symbols-outlined text-sm">warning</span> Nao configurado</span>';
-            }
+            setStatus(urlStatus, result.config.hasApiUrl, 'Configurada');
+            setStatus(keyStatus, result.config.hasApiKey, 'Configurada');
+            setStatus(instanceStatus, result.config.hasInstance, result.config.instanceName || 'dashboard-milo');
         }
     } catch (err) {
-        // Se falhar, campos ficam vazios — normal na primeira vez
-        const statusEl = document.getElementById('waConfigStatus');
-        if (statusEl) statusEl.innerHTML = '<span class="text-slate-500">Preencha os campos abaixo</span>';
-    }
-}
-
-async function saveWhatsAppConfig() {
-    const apiUrl = document.getElementById('waConfigUrl').value.trim();
-    const apiKey = document.getElementById('waConfigKey').value.trim();
-    const instanceName = document.getElementById('waConfigInstance').value.trim();
-    const btn = document.getElementById('waConfigSaveBtn');
-    const statusEl = document.getElementById('waConfigStatus');
-
-    if (!apiUrl) {
-        showToast('Informe a URL da Evolution API', 'error');
-        return;
-    }
-
-    // Se chave esta vazia e ja tem uma salva, nao exigir nova
-    if (!apiKey) {
-        // Verificar se ja tem chave salva
-        try {
-            const configResult = await callWhatsAppAPI('get-config');
-            if (!configResult.config?.hasApiKey) {
-                showToast('Informe a Chave da API', 'error');
-                return;
-            }
-        } catch (e) {
-            showToast('Informe a Chave da API', 'error');
-            return;
-        }
-    }
-
-    btn.disabled = true;
-    btn.innerHTML = '<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Salvando...';
-
-    try {
-        const data = { apiUrl, instanceName: instanceName || 'dashboard-milo' };
-        if (apiKey) data.apiKey = apiKey;
-
-        await callWhatsAppAPI('save-config', data);
-
-        statusEl.innerHTML = '<span class="text-green-400 flex items-center gap-1"><span class="material-symbols-outlined text-sm">check_circle</span> Salvo!</span>';
-        showToast('Configuracoes salvas com sucesso!', 'success');
-
-        // Limpar campo de chave e atualizar placeholder
-        document.getElementById('waConfigKey').value = '';
-        document.getElementById('waConfigKey').placeholder = '••••••••  (chave salva)';
-
-        // Recarregar status
-        setTimeout(() => loadWhatsAppStatus(), 500);
-    } catch (err) {
-        statusEl.innerHTML = `<span class="text-red-400">${err.message}</span>`;
-        showToast('Erro ao salvar: ' + err.message, 'error');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<span class="material-symbols-outlined text-lg">save</span> Salvar Configuracoes';
-    }
-}
-
-function toggleWaKeyVisibility() {
-    const input = document.getElementById('waConfigKey');
-    const icon = document.getElementById('waKeyToggleIcon');
-    if (input.type === 'password') {
-        input.type = 'text';
-        icon.textContent = 'visibility_off';
-    } else {
-        input.type = 'password';
-        icon.textContent = 'visibility';
+        setStatus(urlStatus, false);
+        setStatus(keyStatus, false);
+        setStatus(instanceStatus, false);
     }
 }
 
