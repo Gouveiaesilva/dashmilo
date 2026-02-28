@@ -138,7 +138,7 @@ exports.handler = async (event, context) => {
 // ==========================================
 
 async function testConnection(apiUrl, apiKey, instance) {
-    const resp = await fetch(`${apiUrl}/instance/connectionState/${instance}`, {
+    const resp = await fetchWithTimeout(`${apiUrl}/instance/connectionState/${instance}`, {
         method: 'GET',
         headers: { 'apikey': apiKey }
     });
@@ -155,7 +155,7 @@ async function testConnection(apiUrl, apiKey, instance) {
 }
 
 async function getQrCode(apiUrl, apiKey, instance) {
-    const resp = await fetch(`${apiUrl}/instance/connect/${instance}`, {
+    const resp = await fetchWithTimeout(`${apiUrl}/instance/connect/${instance}`, {
         method: 'GET',
         headers: { 'apikey': apiKey }
     });
@@ -171,7 +171,7 @@ async function getQrCode(apiUrl, apiKey, instance) {
 }
 
 async function createInstance(apiUrl, apiKey, instance) {
-    const resp = await fetch(`${apiUrl}/instance/create`, {
+    const resp = await fetchWithTimeout(`${apiUrl}/instance/create`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -194,7 +194,7 @@ async function createInstance(apiUrl, apiKey, instance) {
 }
 
 async function logoutInstance(apiUrl, apiKey, instance) {
-    const resp = await fetch(`${apiUrl}/instance/logout/${instance}`, {
+    const resp = await fetchWithTimeout(`${apiUrl}/instance/logout/${instance}`, {
         method: 'DELETE',
         headers: { 'apikey': apiKey }
     });
@@ -206,7 +206,7 @@ async function logoutInstance(apiUrl, apiKey, instance) {
 }
 
 async function restartInstance(apiUrl, apiKey, instance) {
-    const resp = await fetch(`${apiUrl}/instance/restart/${instance}`, {
+    const resp = await fetchWithTimeout(`${apiUrl}/instance/restart/${instance}`, {
         method: 'PUT',
         headers: { 'apikey': apiKey }
     });
@@ -237,7 +237,7 @@ async function sendText(apiUrl, apiKey, instance, number, text) {
     const cleanNumber = validateNumber(number);
     if (!text) throw new Error('Texto e obrigatorio');
 
-    const resp = await fetch(`${apiUrl}/message/sendText/${instance}`, {
+    const resp = await fetchWithTimeout(`${apiUrl}/message/sendText/${instance}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -310,7 +310,7 @@ async function sendMedia(apiUrl, apiKey, instance, number, mediaBase64, fileName
     const cleanNumber = validateNumber(number);
     if (!mediaBase64) throw new Error('Arquivo e obrigatorio');
 
-    const resp = await fetch(`${apiUrl}/message/sendMedia/${instance}`, {
+    const resp = await fetchWithTimeout(`${apiUrl}/message/sendMedia/${instance}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -337,6 +337,22 @@ async function sendMedia(apiUrl, apiKey, instance, number, mediaBase64, fileName
 // ==========================================
 // HELPERS
 // ==========================================
+
+async function fetchWithTimeout(url, options, timeoutMs = 25000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const resp = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(timer);
+        return resp;
+    } catch (e) {
+        clearTimeout(timer);
+        if (e.name === 'AbortError') {
+            throw new Error('Evolution API nao respondeu a tempo. O servidor pode estar hibernando (Render free tier). Tente novamente em 1 minuto.');
+        }
+        throw e;
+    }
+}
 
 function fmtNum(val) {
     if (val === null || val === undefined) return '0,00';
