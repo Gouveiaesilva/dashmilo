@@ -895,7 +895,7 @@ async function addClient(event) {
     let result;
 
     // Coletar campos opcionais
-    const whatsappNumber = document.getElementById('clientWhatsapp').value.trim() || null;
+    const whatsappNumber = getCleanPhone('clientWhatsapp') || null;
     const googleChatWebhook = document.getElementById('googleChatWebhook').value.trim() || null;
 
     if (editingClientId) {
@@ -991,8 +991,10 @@ async function editClient(clientId) {
         document.getElementById('cplWarning').value = '';
     }
 
-    // Preencher WhatsApp
-    document.getElementById('clientWhatsapp').value = client.whatsappNumber || '';
+    // Preencher WhatsApp (formatado)
+    const waInput = document.getElementById('clientWhatsapp');
+    waInput.value = client.whatsappNumber || '';
+    if (waInput.value) formatPhoneInput(waInput);
 
     // Preencher webhook
     document.getElementById('googleChatWebhook').value = client.googleChatWebhook || '';
@@ -1958,6 +1960,25 @@ async function submitUploadCreative() {
 let waQrPollingInterval = null;
 let waQrCountdownInterval = null;
 
+// Formatacao de telefone: 55 (11) 99999-9999
+function formatPhoneInput(input) {
+    let digits = input.value.replace(/\D/g, '');
+    if (digits.length > 13) digits = digits.slice(0, 13);
+
+    let formatted = '';
+    if (digits.length > 0) formatted = digits.slice(0, 2);
+    if (digits.length > 2) formatted += ' (' + digits.slice(2, 4);
+    if (digits.length > 4) formatted += ') ' + digits.slice(4, 9);
+    if (digits.length > 9) formatted += '-' + digits.slice(9, 13);
+
+    input.value = formatted;
+}
+
+function getCleanPhone(inputId) {
+    const el = document.getElementById(inputId);
+    return el ? el.value.replace(/\D/g, '') : '';
+}
+
 async function callWhatsAppAPI(action, data = {}) {
     const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
     const password = currentAdminPassword || '';
@@ -2112,7 +2133,7 @@ async function disconnectWhatsApp() {
 }
 
 async function sendWhatsAppTest() {
-    const number = document.getElementById('waTestNumber').value.trim();
+    const number = getCleanPhone('waTestNumber');
     const message = document.getElementById('waTestMessage').value.trim();
     const btn = document.getElementById('waTestSendBtn');
     const resultEl = document.getElementById('waTestResult');

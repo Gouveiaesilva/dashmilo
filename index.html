@@ -983,7 +983,8 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-medium text-slate-400 mb-1.5">Numero (com DDD)</label>
-                        <input type="tel" id="waTestNumber" placeholder="5511999999999" maxlength="13"
+                        <input type="tel" id="waTestNumber" placeholder="55 (11) 99999-9999" maxlength="19"
+                            oninput="formatPhoneInput(this)"
                             class="w-full bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors">
                     </div>
                     <div>
@@ -1298,9 +1299,10 @@
                             <input
                                 type="tel"
                                 id="clientWhatsapp"
-                                maxlength="13"
+                                maxlength="19"
+                                oninput="formatPhoneInput(this)"
                                 class="w-full bg-surface-dark border border-border-dark text-white rounded-lg py-2.5 pl-9 pr-3 text-sm focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
-                                placeholder="5511999999999"
+                                placeholder="55 (11) 99999-9999"
                             >
                         </div>
                         <p class="text-[10px] text-slate-600 mt-1">Formato: 55 + DDD + numero (sem espacos). Ex: 5511999999999</p>
