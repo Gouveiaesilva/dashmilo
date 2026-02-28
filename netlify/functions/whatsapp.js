@@ -245,7 +245,7 @@ async function sendText(apiUrl, apiKey, instance, number, text) {
         },
         body: JSON.stringify({
             number: cleanNumber,
-            text: text
+            textMessage: { text: text }
         })
     });
     const data = await resp.json();
