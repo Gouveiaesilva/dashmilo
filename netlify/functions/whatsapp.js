@@ -113,6 +113,11 @@ exports.handler = async (event, context) => {
                 result = await sendMedia(API_URL, API_KEY, INSTANCE, body.number, body.mediaBase64, body.fileName, body.caption);
                 break;
 
+            // === DIAGNOSTICO ===
+            case 'diagnose':
+                result = await diagnoseAPI(API_URL, API_KEY, INSTANCE);
+                break;
+
             default:
                 return { statusCode: 400, headers, body: JSON.stringify({ error: `Action desconhecida: ${action}` }) };
         }
@@ -335,6 +340,130 @@ async function sendMedia(apiUrl, apiKey, instance, number, mediaBase64, fileName
 }
 
 // ==========================================
+// DIAGNOSTICO
+// ==========================================
+
+async function diagnoseAPI(apiUrl, apiKey, instance) {
+    const tests = [];
+
+    // Test 1: API alcancavel (GET /)
+    tests.push(await runDiagTest('API Alcancavel', async () => {
+        const resp = await fetchWithTimeout(`${apiUrl}`, {
+            method: 'GET',
+            headers: { 'apikey': apiKey }
+        }, 4000);
+        let data;
+        try { data = await resp.json(); } catch { data = { raw: (await resp.text()).substring(0, 200) }; }
+        return { status: resp.status, version: data.version || null, data };
+    }));
+
+    // Test 2: Estado da instancia
+    tests.push(await runDiagTest('Estado da Instancia', async () => {
+        const resp = await fetchWithTimeout(`${apiUrl}/instance/connectionState/${instance}`, {
+            method: 'GET',
+            headers: { 'apikey': apiKey }
+        }, 4000);
+        const data = await resp.json();
+        return { status: resp.status, state: data.instance?.state || data.state, data };
+    }));
+
+    // Test 3: Detalhes da instancia (busca token)
+    let instanceToken = null;
+    tests.push(await runDiagTest('Detalhes da Instancia', async () => {
+        const resp = await fetchWithTimeout(`${apiUrl}/instance/fetchInstances?instanceName=${instance}`, {
+            method: 'GET',
+            headers: { 'apikey': apiKey }
+        }, 4000);
+        const data = await resp.json();
+        if (Array.isArray(data) && data[0]) {
+            instanceToken = data[0].token || data[0].instance?.token || null;
+        } else if (data.token) {
+            instanceToken = data.token;
+        } else if (data.instance?.token) {
+            instanceToken = data.instance.token;
+        }
+        return { status: resp.status, hasToken: !!instanceToken, instanceData: JSON.stringify(data).substring(0, 500) };
+    }));
+
+    // Test 4: sendText com chave global (numero invalido — so testa se o endpoint responde)
+    const testBody = { number: '5500000000000', text: 'diag' };
+    tests.push(await runDiagTest('sendText (chave global)', async () => {
+        const resp = await fetchWithTimeout(`${apiUrl}/message/sendText/${instance}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': apiKey },
+            body: JSON.stringify(testBody)
+        }, 6000);
+        const data = await resp.json();
+        return { status: resp.status, data };
+    }));
+
+    // Test 5: sendText com token da instancia (se disponivel)
+    if (instanceToken) {
+        tests.push(await runDiagTest('sendText (token instancia)', async () => {
+            const resp = await fetchWithTimeout(`${apiUrl}/message/sendText/${instance}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'apikey': instanceToken },
+                body: JSON.stringify(testBody)
+            }, 6000);
+            const data = await resp.json();
+            return { status: resp.status, data };
+        }));
+    }
+
+    // Test 6: sendText formato v1 (textMessage wrapper)
+    const lastSendTest = tests.find(t => t.name.startsWith('sendText'));
+    if (lastSendTest && !lastSendTest.ok) {
+        tests.push(await runDiagTest('sendText (formato v1 wrapper)', async () => {
+            const resp = await fetchWithTimeout(`${apiUrl}/message/sendText/${instance}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'apikey': apiKey },
+                body: JSON.stringify({ number: '5500000000000', textMessage: { text: 'diag' } })
+            }, 6000);
+            const data = await resp.json();
+            return { status: resp.status, data };
+        }));
+    }
+
+    return {
+        diagnostics: tests,
+        summary: tests.map(t => `${t.ok ? 'OK' : 'FALHA'} ${t.name} (${t.timeMs}ms)`).join(' | '),
+        recommendation: generateRecommendation(tests, instanceToken)
+    };
+}
+
+async function runDiagTest(name, fn) {
+    const start = Date.now();
+    try {
+        const result = await fn();
+        return { name, ok: true, timeMs: Date.now() - start, ...result };
+    } catch (e) {
+        return { name, ok: false, timeMs: Date.now() - start, error: e.message };
+    }
+}
+
+function generateRecommendation(tests, hasToken) {
+    const apiOk = tests[0]?.ok;
+    const stateOk = tests[1]?.ok;
+    const sendGlobal = tests.find(t => t.name === 'sendText (chave global)');
+    const sendToken = tests.find(t => t.name === 'sendText (token instancia)');
+    const sendV1 = tests.find(t => t.name === 'sendText (formato v1 wrapper)');
+
+    if (!apiOk) return 'SERVIDOR_OFFLINE: A Evolution API nao esta respondendo. Verifique se o servidor Oracle Cloud esta rodando e se o Docker container esta ativo.';
+    if (!stateOk) return 'INSTANCIA_ERRO: O servidor responde mas a instancia nao foi encontrada. Verifique o nome da instancia nas variaveis de ambiente.';
+
+    const state = tests[1]?.state;
+    if (state !== 'open') return `WHATSAPP_DESCONECTADO: A instancia esta com estado "${state}". Reconecte o WhatsApp escaneando o QR code.`;
+
+    if (sendGlobal?.ok) return 'TUDO_OK: O envio funciona com a chave global. Se ainda falhar com numeros reais, o problema pode ser o formato do numero.';
+    if (sendToken?.ok) return 'USAR_TOKEN: O envio funciona com o token da instancia mas NAO com a chave global. O sistema sera atualizado para usar o token automaticamente.';
+    if (sendV1?.ok) return 'FORMATO_V1: O envio funciona com o formato v1 (textMessage wrapper). O sistema sera atualizado para usar este formato.';
+
+    if (sendGlobal && sendGlobal.error?.includes('tempo')) return 'TIMEOUT_ENVIO: O endpoint de envio nao responde. O container pode estar travado. Tente reiniciar a instancia pelo botao abaixo.';
+
+    return 'ERRO_DESCONHECIDO: O envio falhou por motivo nao identificado. Verifique os detalhes dos testes abaixo.';
+}
+
+// ==========================================
 // HELPERS
 // ==========================================
 
@@ -348,9 +477,15 @@ async function fetchWithTimeout(url, options, timeoutMs = 25000) {
     } catch (e) {
         clearTimeout(timer);
         if (e.name === 'AbortError') {
-            throw new Error('Evolution API nao respondeu a tempo. O servidor pode estar hibernando (Render free tier). Tente novamente em 1 minuto.');
+            throw new Error(`Evolution API nao respondeu em ${Math.round(timeoutMs/1000)}s. Verifique se o servidor esta online e acessivel.`);
         }
-        throw e;
+        if (e.code === 'ECONNREFUSED') {
+            throw new Error('Conexao recusada. O servidor Evolution API pode estar desligado.');
+        }
+        if (e.code === 'ENOTFOUND') {
+            throw new Error('Servidor nao encontrado. Verifique a URL da Evolution API.');
+        }
+        throw new Error(`Erro de rede: ${e.message}`);
     }
 }
 

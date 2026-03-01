@@ -1087,6 +1087,28 @@
                 </div>
 
                 <p class="text-[10px] text-slate-600 pt-1">As credenciais sao gerenciadas com seguranca nas variaveis de ambiente do Netlify.</p>
+
+                <!-- Botoes de acao -->
+                <div class="flex flex-wrap gap-2 pt-3">
+                    <button id="waDiagnoseBtn" onclick="diagnoseWhatsApp()" class="flex items-center gap-1.5 px-3 py-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-lg text-xs font-medium hover:bg-amber-500/20 transition-colors">
+                        <span class="material-symbols-outlined text-sm">troubleshoot</span>
+                        Diagnosticar API
+                    </button>
+                    <button onclick="restartWhatsAppInstance()" class="flex items-center gap-1.5 px-3 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg text-xs font-medium hover:bg-blue-500/20 transition-colors">
+                        <span class="material-symbols-outlined text-sm">restart_alt</span>
+                        Reiniciar Instancia
+                    </button>
+                </div>
+
+                <!-- Resultado do diagnostico -->
+                <div id="waDiagResult" class="hidden mt-4 bg-background-dark border border-border-dark rounded-lg p-4 space-y-3">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="material-symbols-outlined text-sm text-amber-400">troubleshoot</span>
+                        <span class="text-xs font-bold text-white">Resultado do Diagnostico</span>
+                    </div>
+                    <div id="waDiagRecommendation" class="text-xs font-medium p-2.5 rounded-lg"></div>
+                    <div id="waDiagTests" class="space-y-1.5"></div>
+                </div>
             </div>
         </div>
 

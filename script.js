@@ -2200,6 +2200,61 @@ async function sendWhatsAppTest() {
     }
 }
 
+// --- Diagnostico da API WhatsApp ---
+
+async function diagnoseWhatsApp() {
+    const btn = document.getElementById('waDiagnoseBtn');
+    const resultEl = document.getElementById('waDiagResult');
+    const recEl = document.getElementById('waDiagRecommendation');
+    const testsEl = document.getElementById('waDiagTests');
+
+    btn.disabled = true;
+    btn.innerHTML = '<div class="w-4 h-4 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin"></div> Diagnosticando...';
+    resultEl.classList.remove('hidden');
+    recEl.innerHTML = '<span class="text-slate-400">Executando testes...</span>';
+    testsEl.innerHTML = '';
+
+    try {
+        const result = await callWhatsAppAPI('diagnose');
+        const rec = result.recommendation || '';
+        const isOk = rec.startsWith('TUDO_OK');
+        const isAction = rec.startsWith('USAR_TOKEN') || rec.startsWith('FORMATO_V1');
+
+        recEl.className = `text-xs font-medium p-2.5 rounded-lg ${isOk ? 'bg-green-500/10 text-green-400 border border-green-500/20' : isAction ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`;
+        recEl.textContent = rec.split(': ').slice(1).join(': ') || rec;
+
+        if (result.diagnostics) {
+            testsEl.innerHTML = result.diagnostics.map(t => {
+                const icon = t.ok ? 'check_circle' : 'cancel';
+                const color = t.ok ? 'text-green-400' : 'text-red-400';
+                const detail = t.error || `HTTP ${t.status || '?'} — ${t.timeMs}ms`;
+                return `<div class="flex items-center gap-2 text-[11px]">
+                    <span class="material-symbols-outlined text-sm ${color}">${icon}</span>
+                    <span class="text-slate-300 font-medium">${t.name}</span>
+                    <span class="text-slate-500">${detail}</span>
+                </div>`;
+            }).join('');
+        }
+    } catch (err) {
+        recEl.className = 'text-xs font-medium p-2.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20';
+        recEl.textContent = err.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined text-sm">troubleshoot</span> Diagnosticar API';
+    }
+}
+
+async function restartWhatsAppInstance() {
+    if (!confirm('Reiniciar a instancia WhatsApp? A conexao sera mantida.')) return;
+    try {
+        await callWhatsAppAPI('restart-instance');
+        showToast('Instancia reiniciada com sucesso', 'success');
+        setTimeout(() => loadWhatsAppStatus(), 2000);
+    } catch (err) {
+        showToast('Erro ao reiniciar: ' + err.message, 'error');
+    }
+}
+
 // --- Envio de relatorio via WhatsApp ---
 
 function openWhatsAppSendModal() {
