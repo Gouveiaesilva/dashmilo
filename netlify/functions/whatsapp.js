@@ -250,9 +250,24 @@ async function sendText(apiUrl, apiKey, instance, number, text) {
     const cleanNumber = validateNumber(number);
     if (!text) throw new Error('Texto e obrigatorio');
 
-    // Retry: 1a tentativa 10s, 2a tentativa 12s
+    // Warm-up: verificar conexao antes de enviar (acorda o Render + valida sessao)
+    try {
+        const warmup = await fetchWithTimeout(`${apiUrl}/instance/connectionState/${instance}`, {
+            method: 'GET', headers: { 'apikey': apiKey }
+        }, 5000);
+        const wData = await warmup.json();
+        const state = wData.instance?.state || wData.state || 'unknown';
+        if (state !== 'open') {
+            throw new Error(`WhatsApp nao esta conectado (estado: ${state}). Reconecte pelo painel API WhatsApp.`);
+        }
+    } catch (e) {
+        if (e.message.includes('nao esta conectado')) throw e;
+        // Se o warmup falhar por timeout, tenta enviar mesmo assim
+    }
+
+    // Envio com retry: 1a tentativa 9s, 2a tentativa 10s
     let lastError;
-    for (const timeout of [10000, 12000]) {
+    for (const timeout of [9000, 10000]) {
         try {
             const resp = await fetchWithTimeout(`${apiUrl}/message/sendText/${instance}`, {
                 method: 'POST',
@@ -269,11 +284,10 @@ async function sendText(apiUrl, apiKey, instance, number, text) {
             return handleSendResponse(data);
         } catch (e) {
             lastError = e;
-            // So faz retry se foi timeout, outros erros sao finais
             if (!e.message.includes('nao respondeu')) throw e;
         }
     }
-    throw new Error('Envio falhou apos 2 tentativas. O servidor pode estar instavel. Tente novamente em alguns segundos.');
+    throw new Error('Envio falhou apos 2 tentativas. O servidor WhatsApp esta muito lento. Tente novamente em 30 segundos.');
 }
 
 function handleSendResponse(data) {

@@ -8,6 +8,9 @@
 [functions."weekly-report"]
   schedule = "@hourly"
 
+[functions."keep-alive"]
+  schedule = "*/5 * * * *"
+
 # Redirecionar chamadas da API para a função
 [[redirects]]
   from = "/api/*"
