@@ -250,18 +250,33 @@ async function sendText(apiUrl, apiKey, instance, number, text) {
     const cleanNumber = validateNumber(number);
     if (!text) throw new Error('Texto e obrigatorio');
 
-    const resp = await fetchWithTimeout(`${apiUrl}/message/sendText/${instance}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'apikey': apiKey
-        },
-        body: JSON.stringify({
-            number: cleanNumber,
-            text: text
-        })
-    });
-    const data = await resp.json();
+    // Retry: 1a tentativa 10s, 2a tentativa 12s
+    let lastError;
+    for (const timeout of [10000, 12000]) {
+        try {
+            const resp = await fetchWithTimeout(`${apiUrl}/message/sendText/${instance}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': apiKey
+                },
+                body: JSON.stringify({
+                    number: cleanNumber,
+                    text: text
+                })
+            }, timeout);
+            const data = await resp.json();
+            return handleSendResponse(data);
+        } catch (e) {
+            lastError = e;
+            // So faz retry se foi timeout, outros erros sao finais
+            if (!e.message.includes('nao respondeu')) throw e;
+        }
+    }
+    throw new Error('Envio falhou apos 2 tentativas. O servidor pode estar instavel. Tente novamente em alguns segundos.');
+}
+
+function handleSendResponse(data) {
 
     if (data.error || data.status >= 400) {
         // Extrair mensagem de erro da Evolution API
