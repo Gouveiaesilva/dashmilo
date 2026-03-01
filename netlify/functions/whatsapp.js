@@ -33,10 +33,14 @@ exports.handler = async (event, context) => {
         // Config via variaveis de ambiente
         const API_URL = (process.env.EVOLUTION_API_URL || '').replace(/\/+$/, '');
         const API_KEY = process.env.EVOLUTION_API_KEY || '';
-        const INSTANCE = process.env.EVOLUTION_INSTANCE_NAME || 'dashboard-milo';
+        const DEFAULT_INSTANCE = process.env.EVOLUTION_INSTANCE_NAME || 'dashboard-milo';
+
+        // Buscar instancia ativa (pode ter sido trocada por force-reset)
+        const INSTANCE = await getActiveInstance(DEFAULT_INSTANCE);
 
         // Action de status da config (nao precisa de API conectada)
         if (action === 'get-config') {
+            const activeInstance = await getActiveInstance(DEFAULT_INSTANCE);
             return {
                 statusCode: 200,
                 headers,
@@ -45,8 +49,8 @@ exports.handler = async (event, context) => {
                     config: {
                         hasApiUrl: !!API_URL,
                         hasApiKey: !!API_KEY,
-                        hasInstance: !!INSTANCE,
-                        instanceName: INSTANCE
+                        hasInstance: !!activeInstance,
+                        instanceName: activeInstance
                     }
                 })
             };
@@ -347,70 +351,92 @@ async function sendMedia(apiUrl, apiKey, instance, number, mediaBase64, fileName
 // FORCE RESET
 // ==========================================
 
-async function forceReset(apiUrl, apiKey, instance) {
+async function forceReset(apiUrl, apiKey, oldInstance) {
     const steps = [];
 
-    // Step 1: Logout (2s timeout — fire and forget)
-    try {
-        await fetchWithTimeout(`${apiUrl}/instance/logout/${instance}`, {
-            method: 'DELETE', headers: { 'apikey': apiKey }
-        }, 2000);
-        steps.push({ step: 'logout', ok: true });
-    } catch (e) {
-        steps.push({ step: 'logout', ok: false, note: 'ignorado' });
-    }
+    // Estrategia: ABANDONAR a instancia travada e criar uma nova com nome unico
+    // Isso evita qualquer operacao na instancia travada (que causa timeout)
+    const newName = 'milo-' + Date.now().toString(36);
 
-    // Step 2: Delete instance (3s timeout)
-    try {
-        await fetchWithTimeout(`${apiUrl}/instance/delete/${instance}`, {
-            method: 'DELETE', headers: { 'apikey': apiKey }
-        }, 3000);
-        steps.push({ step: 'delete', ok: true });
-    } catch (e) {
-        steps.push({ step: 'delete', ok: false, note: e.message });
-    }
-
-    // Step 3: Esperar o cleanup
-    await new Promise(r => setTimeout(r, 1500));
-
-    // Step 4: Criar nova instancia
+    // Step 1: Criar instancia nova (nao toca na velha)
+    let createData = null;
     try {
         const resp = await fetchWithTimeout(`${apiUrl}/instance/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'apikey': apiKey },
-            body: JSON.stringify({ instanceName: instance, integration: 'WHATSAPP-BAILEYS', qrcode: true })
-        }, 5000);
-        const data = await resp.json();
-        steps.push({ step: 'create', ok: resp.ok, status: resp.status });
-
-        // Se a criacao retornar QR code diretamente
-        if (data.qrcode?.base64 || data.base64) {
-            return {
-                reset: true, steps,
-                qrcode: data.qrcode?.base64 || data.base64,
-                pairingCode: data.pairingCode || null
-            };
-        }
+            body: JSON.stringify({ instanceName: newName, integration: 'WHATSAPP-BAILEYS', qrcode: true })
+        }, 8000);
+        createData = await resp.json();
+        steps.push({ step: 'create', ok: resp.ok, status: resp.status, newInstance: newName });
     } catch (e) {
-        steps.push({ step: 'create', ok: false, note: e.message });
+        steps.push({ step: 'create', ok: false, error: e.message });
+        return { reset: false, steps, error: 'Nao foi possivel criar nova instancia: ' + e.message };
     }
 
-    // Step 5: Buscar QR code
+    // Step 2: Salvar nome da nova instancia no Blobs (override)
     try {
-        await new Promise(r => setTimeout(r, 1000));
-        const resp = await fetchWithTimeout(`${apiUrl}/instance/connect/${instance}`, {
-            method: 'GET', headers: { 'apikey': apiKey }
-        }, 5000);
-        const data = await resp.json();
-        return {
-            reset: true, steps,
-            qrcode: data.base64 || data.qrcode?.base64 || null,
-            pairingCode: data.pairingCode || null
-        };
+        await saveActiveInstance(newName);
+        steps.push({ step: 'save', ok: true, newInstance: newName });
     } catch (e) {
-        steps.push({ step: 'qrcode', ok: false, note: e.message });
-        return { reset: false, steps, error: 'Reset parcial. Tente acessar o painel da Evolution API diretamente.' };
+        steps.push({ step: 'save', ok: false, error: e.message });
     }
+
+    // Step 3: Buscar QR code (a criacao pode ja ter retornado)
+    let qrcode = createData?.qrcode?.base64 || createData?.base64 || null;
+    let pairingCode = createData?.pairingCode || null;
+
+    if (!qrcode) {
+        try {
+            await new Promise(r => setTimeout(r, 500));
+            const resp = await fetchWithTimeout(`${apiUrl}/instance/connect/${newName}`, {
+                method: 'GET', headers: { 'apikey': apiKey }
+            }, 6000);
+            const data = await resp.json();
+            qrcode = data.base64 || data.qrcode?.base64 || null;
+            pairingCode = data.pairingCode || pairingCode;
+            steps.push({ step: 'qrcode', ok: !!qrcode });
+        } catch (e) {
+            steps.push({ step: 'qrcode', ok: false, error: e.message });
+        }
+    }
+
+    // Step 4: Tentar limpar instancia velha em background (fire-and-forget, 2s max)
+    try {
+        await fetchWithTimeout(`${apiUrl}/instance/delete/${oldInstance}`, {
+            method: 'DELETE', headers: { 'apikey': apiKey }
+        }, 2000);
+    } catch (e) { /* ignorado */ }
+
+    return {
+        reset: true,
+        steps,
+        newInstance: newName,
+        qrcode,
+        pairingCode
+    };
+}
+
+// Gerenciamento de instancia ativa via Blobs
+function getInstanceStore() {
+    if (process.env.SITE_ID && process.env.NETLIFY_API_TOKEN) {
+        return getStore({ name: 'whatsapp-config', siteID: process.env.SITE_ID, token: process.env.NETLIFY_API_TOKEN, consistency: 'strong' });
+    }
+    return getStore({ name: 'whatsapp-config', consistency: 'strong' });
+}
+
+async function getActiveInstance(defaultName) {
+    try {
+        const store = getInstanceStore();
+        const override = await store.get('active_instance');
+        return override || defaultName;
+    } catch (e) {
+        return defaultName;
+    }
+}
+
+async function saveActiveInstance(name) {
+    const store = getInstanceStore();
+    await store.set('active_instance', name);
 }
 
 // ==========================================

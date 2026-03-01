@@ -2266,7 +2266,6 @@ async function forceResetWhatsApp() {
         const result = await callWhatsAppAPI('force-reset');
 
         if (result.qrcode) {
-            // Mostrar QR code na secao de conexao
             const qrSection = document.getElementById('waQrCodeSection');
             const qrContainer = document.getElementById('waQrCodeContainer');
             const connected = document.getElementById('waStatusConnected');
@@ -2278,7 +2277,7 @@ async function forceResetWhatsApp() {
             qrContainer.innerHTML = `<img src="${result.qrcode}" alt="QR Code" class="w-48 h-48" style="image-rendering: pixelated;">`;
             startQrCountdown(45);
 
-            // Iniciar polling para detectar conexao
+            // Polling para detectar conexao
             stopQrPolling();
             waQrPollingInterval = setInterval(async () => {
                 try {
@@ -2292,9 +2291,12 @@ async function forceResetWhatsApp() {
                 } catch (e) { /* ignora */ }
             }, 3000);
 
-            showToast('Instancia resetada. Escaneie o QR code para reconectar.', 'info');
+            const instanceInfo = result.newInstance ? ` (nova instancia: ${result.newInstance})` : '';
+            showToast('Escaneie o QR code para conectar o WhatsApp' + instanceInfo, 'info');
+        } else if (result.pairingCode) {
+            showToast('Use o codigo de pareamento: ' + result.pairingCode, 'info');
         } else {
-            showToast('Reset parcial. Tente novamente ou verifique o servidor.', 'error');
+            showToast('Nao foi possivel gerar QR code. Detalhes: ' + JSON.stringify(result.steps), 'error');
         }
     } catch (err) {
         showToast('Erro no reset: ' + err.message, 'error');
