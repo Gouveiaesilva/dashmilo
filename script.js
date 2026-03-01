@@ -2255,6 +2255,55 @@ async function restartWhatsAppInstance() {
     }
 }
 
+async function forceResetWhatsApp() {
+    if (!confirm('Isso vai DESCONECTAR o WhatsApp e voce precisara escanear o QR code novamente. Continuar?')) return;
+
+    const btn = document.getElementById('waForceResetBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="w-4 h-4 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin"></div> Resetando...';
+
+    try {
+        const result = await callWhatsAppAPI('force-reset');
+
+        if (result.qrcode) {
+            // Mostrar QR code na secao de conexao
+            const qrSection = document.getElementById('waQrCodeSection');
+            const qrContainer = document.getElementById('waQrCodeContainer');
+            const connected = document.getElementById('waStatusConnected');
+            const disconnected = document.getElementById('waStatusDisconnected');
+
+            if (connected) connected.classList.add('hidden');
+            if (disconnected) disconnected.classList.remove('hidden');
+            qrSection.classList.remove('hidden');
+            qrContainer.innerHTML = `<img src="${result.qrcode}" alt="QR Code" class="w-48 h-48" style="image-rendering: pixelated;">`;
+            startQrCountdown(45);
+
+            // Iniciar polling para detectar conexao
+            stopQrPolling();
+            waQrPollingInterval = setInterval(async () => {
+                try {
+                    const status = await callWhatsAppAPI('test-connection');
+                    if (status.connected) {
+                        stopQrPolling();
+                        qrSection.classList.add('hidden');
+                        showToast('WhatsApp reconectado com sucesso!', 'success');
+                        loadWhatsAppStatus();
+                    }
+                } catch (e) { /* ignora */ }
+            }, 3000);
+
+            showToast('Instancia resetada. Escaneie o QR code para reconectar.', 'info');
+        } else {
+            showToast('Reset parcial. Tente novamente ou verifique o servidor.', 'error');
+        }
+    } catch (err) {
+        showToast('Erro no reset: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined text-sm">power_settings_new</span> Forcar Reset Completo';
+    }
+}
+
 // --- Envio de relatorio via WhatsApp ---
 
 function openWhatsAppSendModal() {

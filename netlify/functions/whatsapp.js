@@ -118,6 +118,10 @@ exports.handler = async (event, context) => {
                 result = await diagnoseAPI(API_URL, API_KEY, INSTANCE);
                 break;
 
+            case 'force-reset':
+                result = await forceReset(API_URL, API_KEY, INSTANCE);
+                break;
+
             default:
                 return { statusCode: 400, headers, body: JSON.stringify({ error: `Action desconhecida: ${action}` }) };
         }
@@ -337,6 +341,76 @@ async function sendMedia(apiUrl, apiKey, instance, number, mediaBase64, fileName
         sent: true,
         messageId: data.key?.id || data.messageId || null
     };
+}
+
+// ==========================================
+// FORCE RESET
+// ==========================================
+
+async function forceReset(apiUrl, apiKey, instance) {
+    const steps = [];
+
+    // Step 1: Logout (2s timeout — fire and forget)
+    try {
+        await fetchWithTimeout(`${apiUrl}/instance/logout/${instance}`, {
+            method: 'DELETE', headers: { 'apikey': apiKey }
+        }, 2000);
+        steps.push({ step: 'logout', ok: true });
+    } catch (e) {
+        steps.push({ step: 'logout', ok: false, note: 'ignorado' });
+    }
+
+    // Step 2: Delete instance (3s timeout)
+    try {
+        await fetchWithTimeout(`${apiUrl}/instance/delete/${instance}`, {
+            method: 'DELETE', headers: { 'apikey': apiKey }
+        }, 3000);
+        steps.push({ step: 'delete', ok: true });
+    } catch (e) {
+        steps.push({ step: 'delete', ok: false, note: e.message });
+    }
+
+    // Step 3: Esperar o cleanup
+    await new Promise(r => setTimeout(r, 1500));
+
+    // Step 4: Criar nova instancia
+    try {
+        const resp = await fetchWithTimeout(`${apiUrl}/instance/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': apiKey },
+            body: JSON.stringify({ instanceName: instance, integration: 'WHATSAPP-BAILEYS', qrcode: true })
+        }, 5000);
+        const data = await resp.json();
+        steps.push({ step: 'create', ok: resp.ok, status: resp.status });
+
+        // Se a criacao retornar QR code diretamente
+        if (data.qrcode?.base64 || data.base64) {
+            return {
+                reset: true, steps,
+                qrcode: data.qrcode?.base64 || data.base64,
+                pairingCode: data.pairingCode || null
+            };
+        }
+    } catch (e) {
+        steps.push({ step: 'create', ok: false, note: e.message });
+    }
+
+    // Step 5: Buscar QR code
+    try {
+        await new Promise(r => setTimeout(r, 1000));
+        const resp = await fetchWithTimeout(`${apiUrl}/instance/connect/${instance}`, {
+            method: 'GET', headers: { 'apikey': apiKey }
+        }, 5000);
+        const data = await resp.json();
+        return {
+            reset: true, steps,
+            qrcode: data.base64 || data.qrcode?.base64 || null,
+            pairingCode: data.pairingCode || null
+        };
+    } catch (e) {
+        steps.push({ step: 'qrcode', ok: false, note: e.message });
+        return { reset: false, steps, error: 'Reset parcial. Tente acessar o painel da Evolution API diretamente.' };
+    }
 }
 
 // ==========================================
