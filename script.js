@@ -2008,13 +2008,15 @@ function setPhoneFromFull(inputId, countrySelectId, fullNumber) {
 
 async function callWhatsAppAPI(action, data = {}) {
     const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8888' : '';
-    const password = currentAdminPassword || '';
     let resp, result;
     try {
         resp = await fetch(`${baseUrl}/.netlify/functions/whatsapp`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action, password, ...data })
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Admin-Token': btoa(currentAdminPassword || '')
+            },
+            body: JSON.stringify({ action, ...data })
         });
         result = await resp.json();
     } catch (e) {
@@ -2026,75 +2028,58 @@ async function callWhatsAppAPI(action, data = {}) {
     return result;
 }
 
+// --- Gerenciamento de estados da UI WhatsApp ---
+
+function waShowState(state) {
+    ['Loading', 'Connected', 'Disconnected', 'Connecting'].forEach(s => {
+        const el = document.getElementById(`waState${s}`);
+        if (el) el.classList.toggle('hidden', s.toLowerCase() !== state);
+    });
+}
+
+function waStatusBadgeHTML(text, isOnline) {
+    const dotColor = isOnline ? 'bg-green-500' : 'bg-slate-500';
+    const textColor = isOnline ? 'text-green-400' : 'text-slate-400';
+    return `<div class="flex items-center gap-2 px-2.5 py-1 rounded-full bg-surface-dark border border-border-dark">
+        <span class="relative flex h-2 w-2">
+            ${isOnline ? '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>' : ''}
+            <span class="relative inline-flex rounded-full h-2 w-2 ${dotColor}"></span>
+        </span>
+        <span class="text-xs font-medium ${textColor}">${text}</span>
+    </div>`;
+}
+
 async function loadWhatsAppStatus() {
-    const loading = document.getElementById('waStatusLoading');
-    const connected = document.getElementById('waStatusConnected');
-    const disconnected = document.getElementById('waStatusDisconnected');
-    const errorEl = document.getElementById('waStatusError');
-    const qrSection = document.getElementById('waQrCodeSection');
+    const badge = document.getElementById('waStatusBadge');
+    const testSection = document.getElementById('waTestSection');
+    if (!document.getElementById('waStateLoading')) return;
 
-    if (!loading) return;
-
-    // Carregar configuracoes salvas nos campos
-    await loadWhatsAppConfig();
-
-    loading.classList.remove('hidden');
-    connected.classList.add('hidden');
-    disconnected.classList.add('hidden');
-    errorEl.classList.add('hidden');
+    waShowState('loading');
 
     try {
         const result = await callWhatsAppAPI('test-connection');
-        loading.classList.add('hidden');
-
         if (result.connected) {
-            connected.classList.remove('hidden');
-            document.getElementById('waInstanceName').textContent = result.instance || '—';
-            if (qrSection) qrSection.classList.add('hidden');
+            waShowState('connected');
+            if (badge) badge.innerHTML = waStatusBadgeHTML('Conectado', true);
+            if (testSection) testSection.classList.remove('hidden');
             stopQrPolling();
         } else {
-            disconnected.classList.remove('hidden');
+            waShowState('disconnected');
+            if (badge) badge.innerHTML = waStatusBadgeHTML('Desconectado', false);
+            if (testSection) testSection.classList.add('hidden');
         }
     } catch (err) {
-        loading.classList.add('hidden');
-        errorEl.classList.remove('hidden');
-        document.getElementById('waStatusErrorMsg').textContent = err.message;
-    }
-}
-
-async function loadWhatsAppConfig() {
-    const urlStatus = document.getElementById('waConfigUrlStatus');
-    const keyStatus = document.getElementById('waConfigKeyStatus');
-    const instanceStatus = document.getElementById('waConfigInstanceStatus');
-
-    function setStatus(el, ok, label) {
-        if (!el) return;
-        if (ok) {
-            el.className = 'flex items-center gap-1 text-xs font-medium text-green-400';
-            el.innerHTML = `<span class="material-symbols-outlined text-sm">check_circle</span> ${label}`;
-        } else {
-            el.className = 'flex items-center gap-1 text-xs font-medium text-red-400';
-            el.innerHTML = `<span class="material-symbols-outlined text-sm">cancel</span> Nao configurada`;
-        }
-    }
-
-    try {
-        const result = await callWhatsAppAPI('get-config');
-        if (result.config) {
-            setStatus(urlStatus, result.config.hasApiUrl, 'Configurada');
-            setStatus(keyStatus, result.config.hasApiKey, 'Configurada');
-            setStatus(instanceStatus, result.config.hasInstance, result.config.instanceName || 'dashboard-milo');
-        }
-    } catch (err) {
-        setStatus(urlStatus, false);
-        setStatus(keyStatus, false);
-        setStatus(instanceStatus, false);
+        waShowState('disconnected');
+        if (badge) badge.innerHTML = waStatusBadgeHTML('Erro', false);
+        showToast(err.message, 'error');
     }
 }
 
 async function connectWhatsApp() {
-    const qrSection = document.getElementById('waQrCodeSection');
-    qrSection.classList.remove('hidden');
+    const badge = document.getElementById('waStatusBadge');
+    waShowState('connecting');
+    if (badge) badge.innerHTML = waStatusBadgeHTML('Conectando...', false);
+
     await refreshQrCode();
 
     // Polling para detectar conexao
@@ -2104,7 +2089,6 @@ async function connectWhatsApp() {
             const result = await callWhatsAppAPI('test-connection');
             if (result.connected) {
                 stopQrPolling();
-                qrSection.classList.add('hidden');
                 showToast('WhatsApp conectado com sucesso!', 'success');
                 loadWhatsAppStatus();
             }
@@ -2112,39 +2096,50 @@ async function connectWhatsApp() {
     }, 3000);
 }
 
+function cancelConnection() {
+    stopQrPolling();
+    waShowState('disconnected');
+    const badge = document.getElementById('waStatusBadge');
+    if (badge) badge.innerHTML = waStatusBadgeHTML('Desconectado', false);
+}
+
 async function refreshQrCode() {
     const container = document.getElementById('waQrCodeContainer');
+    if (!container) return;
     container.innerHTML = '<div class="w-8 h-8 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"></div>';
 
     try {
         const result = await callWhatsAppAPI('get-qrcode');
         if (result.qrcode) {
-            container.innerHTML = `<img src="${result.qrcode}" alt="QR Code" class="w-48 h-48" style="image-rendering: pixelated;">`;
+            container.innerHTML = `<img src="${result.qrcode}" alt="QR Code" class="w-52 h-52" style="image-rendering: pixelated;">`;
         } else {
-            container.innerHTML = '<p class="text-xs text-slate-500 text-center">QR code nao disponivel.<br>Tente novamente.</p>';
+            container.innerHTML = '<p class="text-xs text-slate-500 text-center px-4">QR code nao disponivel.<br>Tente novamente.</p>';
         }
     } catch (err) {
-        container.innerHTML = `<p class="text-xs text-red-400 text-center">${err.message}</p>`;
+        container.innerHTML = `<p class="text-xs text-red-400 text-center px-4">${err.message}</p>`;
     }
 
-    // Countdown
     startQrCountdown(45);
 }
 
 function startQrCountdown(seconds) {
     const timerEl = document.getElementById('waQrTimer');
+    const progressEl = document.getElementById('waQrProgress');
     if (!timerEl) return;
     clearInterval(waQrCountdownInterval);
 
     let remaining = seconds;
     timerEl.textContent = `${remaining}s`;
+    if (progressEl) progressEl.style.width = '100%';
 
     waQrCountdownInterval = setInterval(() => {
         remaining--;
         timerEl.textContent = `${remaining}s`;
+        if (progressEl) progressEl.style.width = `${(remaining / seconds) * 100}%`;
         if (remaining <= 0) {
             clearInterval(waQrCountdownInterval);
-            timerEl.textContent = 'Expirado';
+            // Auto-refresh do QR code
+            refreshQrCode();
         }
     }, 1000);
 }
@@ -2152,6 +2147,15 @@ function startQrCountdown(seconds) {
 function stopQrPolling() {
     if (waQrPollingInterval) { clearInterval(waQrPollingInterval); waQrPollingInterval = null; }
     if (waQrCountdownInterval) { clearInterval(waQrCountdownInterval); waQrCountdownInterval = null; }
+}
+
+function toggleTestSection() {
+    const content = document.getElementById('waTestContent');
+    const chevron = document.getElementById('waTestChevron');
+    if (!content) return;
+    const isHidden = content.classList.contains('hidden');
+    content.classList.toggle('hidden');
+    if (chevron) chevron.style.transform = isHidden ? 'rotate(180deg)' : '';
 }
 
 async function disconnectWhatsApp() {
@@ -2172,8 +2176,8 @@ async function sendWhatsAppTest() {
     const btn = document.getElementById('waTestSendBtn');
     const resultEl = document.getElementById('waTestResult');
 
-    if (!number || number.length < 12) {
-        showToast('Informe um numero valido (ex: 5511999999999)', 'error');
+    if (!number || number.length < 10) {
+        showToast('Informe um numero valido', 'error');
         return;
     }
     if (!message) {
@@ -2188,7 +2192,7 @@ async function sendWhatsAppTest() {
         await callWhatsAppAPI('send-text', { number, text: message });
         resultEl.classList.remove('hidden');
         resultEl.className = 'text-sm text-green-400';
-        resultEl.textContent = 'Mensagem enviada com sucesso!';
+        resultEl.textContent = 'Mensagem enviada!';
         showToast('Mensagem de teste enviada!', 'success');
     } catch (err) {
         resultEl.classList.remove('hidden');
@@ -2196,113 +2200,7 @@ async function sendWhatsAppTest() {
         resultEl.textContent = err.message;
     } finally {
         btn.disabled = false;
-        btn.innerHTML = '<span class="material-symbols-outlined text-lg">send</span> Enviar Mensagem de Teste';
-    }
-}
-
-// --- Diagnostico da API WhatsApp ---
-
-async function diagnoseWhatsApp() {
-    const btn = document.getElementById('waDiagnoseBtn');
-    const resultEl = document.getElementById('waDiagResult');
-    const recEl = document.getElementById('waDiagRecommendation');
-    const testsEl = document.getElementById('waDiagTests');
-
-    btn.disabled = true;
-    btn.innerHTML = '<div class="w-4 h-4 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin"></div> Diagnosticando...';
-    resultEl.classList.remove('hidden');
-    recEl.innerHTML = '<span class="text-slate-400">Executando testes...</span>';
-    testsEl.innerHTML = '';
-
-    try {
-        const result = await callWhatsAppAPI('diagnose');
-        const rec = result.recommendation || '';
-        const isOk = rec.startsWith('TUDO_OK');
-        const isAction = rec.startsWith('USAR_TOKEN') || rec.startsWith('FORMATO_V1');
-
-        recEl.className = `text-xs font-medium p-2.5 rounded-lg ${isOk ? 'bg-green-500/10 text-green-400 border border-green-500/20' : isAction ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`;
-        recEl.textContent = rec.split(': ').slice(1).join(': ') || rec;
-
-        if (result.diagnostics) {
-            testsEl.innerHTML = result.diagnostics.map(t => {
-                const icon = t.ok ? 'check_circle' : 'cancel';
-                const color = t.ok ? 'text-green-400' : 'text-red-400';
-                const detail = t.error || `HTTP ${t.status || '?'} — ${t.timeMs}ms`;
-                return `<div class="flex items-center gap-2 text-[11px]">
-                    <span class="material-symbols-outlined text-sm ${color}">${icon}</span>
-                    <span class="text-slate-300 font-medium">${t.name}</span>
-                    <span class="text-slate-500">${detail}</span>
-                </div>`;
-            }).join('');
-        }
-    } catch (err) {
-        recEl.className = 'text-xs font-medium p-2.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20';
-        recEl.textContent = err.message;
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<span class="material-symbols-outlined text-sm">troubleshoot</span> Diagnosticar API';
-    }
-}
-
-async function restartWhatsAppInstance() {
-    if (!confirm('Reiniciar a instancia WhatsApp? A conexao sera mantida.')) return;
-    try {
-        await callWhatsAppAPI('restart-instance');
-        showToast('Instancia reiniciada com sucesso', 'success');
-        setTimeout(() => loadWhatsAppStatus(), 2000);
-    } catch (err) {
-        showToast('Erro ao reiniciar: ' + err.message, 'error');
-    }
-}
-
-async function forceResetWhatsApp() {
-    if (!confirm('Isso vai DESCONECTAR o WhatsApp e voce precisara escanear o QR code novamente. Continuar?')) return;
-
-    const btn = document.getElementById('waForceResetBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<div class="w-4 h-4 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin"></div> Resetando...';
-
-    try {
-        const result = await callWhatsAppAPI('force-reset');
-
-        if (result.qrcode) {
-            const qrSection = document.getElementById('waQrCodeSection');
-            const qrContainer = document.getElementById('waQrCodeContainer');
-            const connected = document.getElementById('waStatusConnected');
-            const disconnected = document.getElementById('waStatusDisconnected');
-
-            if (connected) connected.classList.add('hidden');
-            if (disconnected) disconnected.classList.remove('hidden');
-            qrSection.classList.remove('hidden');
-            qrContainer.innerHTML = `<img src="${result.qrcode}" alt="QR Code" class="w-48 h-48" style="image-rendering: pixelated;">`;
-            startQrCountdown(45);
-
-            // Polling para detectar conexao
-            stopQrPolling();
-            waQrPollingInterval = setInterval(async () => {
-                try {
-                    const status = await callWhatsAppAPI('test-connection');
-                    if (status.connected) {
-                        stopQrPolling();
-                        qrSection.classList.add('hidden');
-                        showToast('WhatsApp reconectado com sucesso!', 'success');
-                        loadWhatsAppStatus();
-                    }
-                } catch (e) { /* ignora */ }
-            }, 3000);
-
-            const instanceInfo = result.newInstance ? ` (nova instancia: ${result.newInstance})` : '';
-            showToast('Escaneie o QR code para conectar o WhatsApp' + instanceInfo, 'info');
-        } else if (result.pairingCode) {
-            showToast('Use o codigo de pareamento: ' + result.pairingCode, 'info');
-        } else {
-            showToast('Nao foi possivel gerar QR code. Detalhes: ' + JSON.stringify(result.steps), 'error');
-        }
-    } catch (err) {
-        showToast('Erro no reset: ' + err.message, 'error');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<span class="material-symbols-outlined text-sm">power_settings_new</span> Forcar Reset Completo';
+        btn.innerHTML = '<span class="material-symbols-outlined text-lg">send</span> Enviar Teste';
     }
 }
 

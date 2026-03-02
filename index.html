@@ -867,151 +867,133 @@
     </div>
 
     <!-- Painel: WhatsApp (oculto por padrao) -->
-    <div id="panelWhatsApp" class="hidden p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto w-full">
+    <div id="panelWhatsApp" class="hidden p-4 sm:p-6 lg:p-8 space-y-4 max-w-2xl mx-auto w-full">
 
-        <!-- Card 1: Status da Conexao -->
+        <!-- Card principal: Conexao -->
         <div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-5 sm:p-6">
-            <div class="flex items-center gap-3 mb-5">
-                <div class="w-10 h-10 bg-green-500/10 rounded-xl flex items-center justify-center">
-                    <span class="material-symbols-outlined text-green-400 text-xl">wifi</span>
+
+            <!-- Header: icone + titulo + badge de status -->
+            <div class="flex items-center justify-between mb-5">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-green-500/10 rounded-xl flex items-center justify-center">
+                        <span class="material-symbols-outlined text-green-400 text-xl">chat</span>
+                    </div>
+                    <h3 class="text-sm font-bold text-white">WhatsApp</h3>
                 </div>
-                <div>
-                    <h3 class="text-sm font-bold text-white">Status da Conexao</h3>
-                    <p class="text-[11px] text-slate-500">Estado atual da instancia WhatsApp</p>
-                </div>
+                <div id="waStatusBadge"></div>
             </div>
 
-            <!-- Loading -->
-            <div id="waStatusLoading" class="flex items-center gap-3 py-4">
+            <!-- Estado: Loading -->
+            <div id="waStateLoading" class="flex items-center gap-3 py-6 justify-center">
                 <div class="w-5 h-5 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
                 <span class="text-sm text-slate-400">Verificando conexao...</span>
             </div>
 
-            <!-- Conectado -->
-            <div id="waStatusConnected" class="hidden">
-                <div class="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
-                    <div class="flex items-center gap-3">
-                        <span class="relative flex h-3 w-3">
-                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                            <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                        </span>
-                        <span class="text-sm font-semibold text-green-400">Conectado</span>
+            <!-- Estado: Conectado -->
+            <div id="waStateConnected" class="hidden">
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="w-12 h-12 bg-green-500/10 rounded-full flex items-center justify-center">
+                        <span class="material-symbols-outlined text-green-400 text-2xl">check_circle</span>
                     </div>
-                    <div class="flex flex-wrap gap-4 text-xs text-slate-400">
-                        <span>Instancia: <span id="waInstanceName" class="text-white font-medium">—</span></span>
+                    <div>
+                        <p class="text-sm font-semibold text-green-400">WhatsApp conectado</p>
+                        <p class="text-xs text-slate-500">Pronto para enviar mensagens</p>
                     </div>
                 </div>
-                <div class="flex flex-wrap gap-2 mt-4">
-                    <button onclick="loadWhatsAppStatus()" class="flex items-center gap-1.5 px-3 py-2 bg-surface-dark border border-border-dark text-slate-300 rounded-lg text-xs font-medium hover:bg-background-dark transition-colors">
-                        <span class="material-symbols-outlined text-sm">refresh</span>
-                        Verificar Status
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="loadWhatsAppStatus()"
+                        class="flex items-center gap-1.5 px-3 py-2 bg-surface-dark border border-border-dark text-slate-300 rounded-lg text-xs font-medium hover:bg-background-dark transition-colors">
+                        <span class="material-symbols-outlined text-sm">refresh</span> Atualizar
                     </button>
-                    <button onclick="disconnectWhatsApp()" class="flex items-center gap-1.5 px-3 py-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-xs font-medium hover:bg-red-500/20 transition-colors">
-                        <span class="material-symbols-outlined text-sm">link_off</span>
-                        Desconectar
+                    <button onclick="disconnectWhatsApp()"
+                        class="flex items-center gap-1.5 px-3 py-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-xs font-medium hover:bg-red-500/20 transition-colors">
+                        <span class="material-symbols-outlined text-sm">link_off</span> Desconectar
                     </button>
                 </div>
             </div>
 
-            <!-- Desconectado -->
-            <div id="waStatusDisconnected" class="hidden">
-                <div class="flex items-center gap-3 mb-4">
-                    <span class="relative flex h-3 w-3">
-                        <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                    </span>
-                    <span class="text-sm font-semibold text-red-400">Desconectado</span>
-                </div>
-                <button onclick="connectWhatsApp()" class="flex items-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
-                    <span class="material-symbols-outlined text-lg">qr_code_2</span>
-                    Conectar WhatsApp
-                </button>
-            </div>
-
-            <!-- Erro -->
-            <div id="waStatusError" class="hidden">
-                <div class="flex items-center gap-3 mb-3">
-                    <span class="material-symbols-outlined text-amber-400">warning</span>
-                    <span class="text-sm text-amber-400" id="waStatusErrorMsg">Erro ao verificar conexao</span>
-                </div>
-                <button onclick="loadWhatsAppStatus()" class="flex items-center gap-1.5 px-3 py-2 bg-surface-dark border border-border-dark text-slate-300 rounded-lg text-xs font-medium hover:bg-background-dark transition-colors">
-                    <span class="material-symbols-outlined text-sm">refresh</span>
-                    Tentar Novamente
-                </button>
-            </div>
-        </div>
-
-        <!-- Card 2: QR Code (visivel so quando desconectado e clicou Conectar) -->
-        <div id="waQrCodeSection" class="hidden bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-5 sm:p-6">
-            <div class="flex items-center gap-3 mb-5">
-                <div class="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center">
-                    <span class="material-symbols-outlined text-blue-400 text-xl">qr_code_2</span>
-                </div>
-                <div>
-                    <h3 class="text-sm font-bold text-white">Conectar WhatsApp</h3>
-                    <p class="text-[11px] text-slate-500">Escaneie o QR code para vincular</p>
-                </div>
-            </div>
-
-            <div class="flex flex-col sm:flex-row gap-6 items-start">
-                <!-- QR Code -->
-                <div class="bg-white p-4 rounded-xl mx-auto sm:mx-0">
-                    <div id="waQrCodeContainer" class="w-48 h-48 flex items-center justify-center">
-                        <div class="w-8 h-8 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"></div>
+            <!-- Estado: Desconectado -->
+            <div id="waStateDisconnected" class="hidden">
+                <div class="flex flex-col items-center text-center py-4">
+                    <div class="w-16 h-16 bg-slate-500/10 rounded-full flex items-center justify-center mb-3">
+                        <span class="material-symbols-outlined text-slate-400 text-3xl">phone_disabled</span>
                     </div>
+                    <p class="text-sm font-semibold text-slate-300 mb-1">WhatsApp desconectado</p>
+                    <p class="text-xs text-slate-500 mb-4">Conecte para enviar mensagens e relatorios</p>
+                    <button onclick="connectWhatsApp()"
+                        class="flex items-center gap-2 px-5 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-semibold transition-colors">
+                        <span class="material-symbols-outlined text-lg">qr_code_2</span>
+                        Conectar WhatsApp
+                    </button>
                 </div>
+            </div>
 
-                <!-- Instrucoes -->
-                <div class="flex-1 space-y-3">
-                    <div class="space-y-2">
-                        <div class="flex items-start gap-3">
-                            <span class="w-6 h-6 bg-green-500/10 text-green-400 rounded-full flex items-center justify-center text-xs font-bold shrink-0">1</span>
-                            <p class="text-sm text-slate-300">Abra o <span class="text-white font-medium">WhatsApp</span> no celular</p>
-                        </div>
-                        <div class="flex items-start gap-3">
-                            <span class="w-6 h-6 bg-green-500/10 text-green-400 rounded-full flex items-center justify-center text-xs font-bold shrink-0">2</span>
-                            <p class="text-sm text-slate-300">Toque em <span class="text-white font-medium">Dispositivos conectados</span></p>
-                        </div>
-                        <div class="flex items-start gap-3">
-                            <span class="w-6 h-6 bg-green-500/10 text-green-400 rounded-full flex items-center justify-center text-xs font-bold shrink-0">3</span>
-                            <p class="text-sm text-slate-300">Toque em <span class="text-white font-medium">Conectar dispositivo</span></p>
-                        </div>
-                        <div class="flex items-start gap-3">
-                            <span class="w-6 h-6 bg-green-500/10 text-green-400 rounded-full flex items-center justify-center text-xs font-bold shrink-0">4</span>
-                            <p class="text-sm text-slate-300">Escaneie este <span class="text-white font-medium">QR code</span></p>
+            <!-- Estado: Conectando (QR code inline) -->
+            <div id="waStateConnecting" class="hidden">
+                <div class="flex flex-col sm:flex-row gap-6 items-center sm:items-start">
+                    <!-- QR Code -->
+                    <div class="bg-white p-3 rounded-xl shrink-0">
+                        <div id="waQrCodeContainer" class="w-52 h-52 flex items-center justify-center">
+                            <div class="w-8 h-8 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"></div>
                         </div>
                     </div>
-
-                    <div class="flex items-center gap-3 pt-2">
-                        <div id="waQrCountdown" class="text-xs text-slate-500">
-                            QR expira em: <span id="waQrTimer" class="text-white font-mono">45s</span>
+                    <!-- Instrucoes -->
+                    <div class="flex-1 space-y-3 text-center sm:text-left">
+                        <p class="text-sm font-semibold text-white">Escaneie o QR code</p>
+                        <ol class="space-y-2 text-xs text-slate-400">
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-400 font-bold shrink-0">1.</span>
+                                Abra o WhatsApp no celular
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-400 font-bold shrink-0">2.</span>
+                                Toque em <span class="text-white font-medium">Dispositivos conectados</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-400 font-bold shrink-0">3.</span>
+                                Toque em <span class="text-white font-medium">Conectar dispositivo</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-400 font-bold shrink-0">4.</span>
+                                Aponte a camera para este QR code
+                            </li>
+                        </ol>
+                        <!-- Barra de progresso -->
+                        <div class="pt-2">
+                            <div class="flex justify-between text-[10px] text-slate-500 mb-1">
+                                <span>QR valido por</span>
+                                <span id="waQrTimer" class="text-white font-mono">45s</span>
+                            </div>
+                            <div class="w-full h-1 bg-slate-700 rounded-full overflow-hidden">
+                                <div id="waQrProgress" class="h-full bg-green-500 rounded-full transition-all duration-1000" style="width: 100%"></div>
+                            </div>
                         </div>
-                        <button onclick="refreshQrCode()" class="flex items-center gap-1.5 px-3 py-1.5 bg-surface-dark border border-border-dark text-slate-300 rounded-lg text-xs font-medium hover:bg-background-dark transition-colors">
-                            <span class="material-symbols-outlined text-sm">refresh</span>
-                            Novo QR Code
+                        <button onclick="cancelConnection()"
+                            class="text-xs text-slate-500 hover:text-slate-300 transition-colors mt-2 inline-block">
+                            Cancelar
                         </button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Card 3: Testar Envio -->
-        <div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-5 sm:p-6">
-            <div class="flex items-center gap-3 mb-5">
-                <div class="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center">
-                    <span class="material-symbols-outlined text-emerald-400 text-xl">send</span>
+        <!-- Secao de teste (expandivel, so visivel quando conectado) -->
+        <div id="waTestSection" class="hidden">
+            <button onclick="toggleTestSection()" id="waTestToggle"
+                class="w-full bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-4 sm:p-5 flex items-center justify-between hover:bg-background-dark/50 transition-colors">
+                <div class="flex items-center gap-3">
+                    <span class="material-symbols-outlined text-emerald-400 text-lg">send</span>
+                    <span class="text-sm font-medium text-white">Enviar mensagem de teste</span>
                 </div>
-                <div>
-                    <h3 class="text-sm font-bold text-white">Testar Envio</h3>
-                    <p class="text-[11px] text-slate-500">Envie uma mensagem de teste para verificar</p>
-                </div>
-            </div>
-
-            <div class="space-y-4">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <span id="waTestChevron" class="material-symbols-outlined text-slate-400 transition-transform duration-200">expand_more</span>
+            </button>
+            <div id="waTestContent" class="hidden bg-surface-dark border border-border-dark border-t-0 rounded-b-xl sm:rounded-b-2xl -mt-3 p-5 pt-6">
+                <div class="space-y-4">
                     <div>
                         <label class="block text-xs font-medium text-slate-400 mb-1.5">Numero (com DDD)</label>
                         <div class="flex gap-2">
-                            <select id="waTestCountry" class="bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors w-[90px] flex-shrink-0">
+                            <select id="waTestCountry"
+                                class="bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-2 text-sm w-[80px] shrink-0">
                                 <option value="55" selected>+55</option>
                                 <option value="1">+1</option>
                                 <option value="351">+351</option>
@@ -1024,106 +1006,29 @@
                             </select>
                             <input type="tel" id="waTestNumber" placeholder="(11) 99999-9999" maxlength="16"
                                 oninput="formatPhoneLocal(this)"
-                                class="w-full bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors">
+                                class="w-full bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-3 text-sm">
                         </div>
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-slate-400 mb-1.5">Mensagem</label>
                         <input type="text" id="waTestMessage" value="Teste de envio via Dashboard Milo"
-                            class="w-full bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors">
+                            class="w-full bg-background-dark border border-border-dark text-white rounded-lg py-2.5 px-3 text-sm">
                     </div>
-                </div>
-                <div class="flex items-center gap-3">
-                    <button id="waTestSendBtn" onclick="sendWhatsAppTest()" class="flex items-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
-                        <span class="material-symbols-outlined text-lg">send</span>
-                        Enviar Mensagem de Teste
-                    </button>
-                    <div id="waTestResult" class="hidden text-sm"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Card 4: Configuracoes (editaveis) -->
-        <div class="bg-surface-dark border border-border-dark rounded-xl sm:rounded-2xl p-5 sm:p-6">
-            <div class="flex items-center gap-3 mb-5">
-                <div class="w-10 h-10 bg-slate-500/10 rounded-xl flex items-center justify-center">
-                    <span class="material-symbols-outlined text-slate-400 text-xl">settings</span>
-                </div>
-                <div>
-                    <h3 class="text-sm font-bold text-white">Configuracoes da API</h3>
-                    <p class="text-[11px] text-slate-500">Configure a conexao com a Evolution API</p>
-                </div>
-            </div>
-
-            <div class="space-y-3" id="waConfigItems">
-                <div class="flex items-center justify-between py-2.5 px-3 bg-background-dark border border-border-dark rounded-lg">
-                    <div class="flex items-center gap-2">
-                        <span class="material-symbols-outlined text-sm text-slate-500">link</span>
-                        <span class="text-xs text-slate-400">URL da API</span>
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                        <button id="waTestSendBtn" onclick="sendWhatsAppTest()"
+                            class="flex items-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors w-full sm:w-auto justify-center">
+                            <span class="material-symbols-outlined text-lg">send</span>
+                            Enviar Teste
+                        </button>
+                        <div id="waTestResult" class="hidden text-sm"></div>
                     </div>
-                    <span id="waConfigUrlStatus" class="flex items-center gap-1 text-xs font-medium text-slate-500">
-                        <span class="material-symbols-outlined text-sm">hourglass_empty</span> Verificando...
-                    </span>
-                </div>
-
-                <div class="flex items-center justify-between py-2.5 px-3 bg-background-dark border border-border-dark rounded-lg">
-                    <div class="flex items-center gap-2">
-                        <span class="material-symbols-outlined text-sm text-slate-500">key</span>
-                        <span class="text-xs text-slate-400">Chave da API</span>
-                    </div>
-                    <span id="waConfigKeyStatus" class="flex items-center gap-1 text-xs font-medium text-slate-500">
-                        <span class="material-symbols-outlined text-sm">hourglass_empty</span> Verificando...
-                    </span>
-                </div>
-
-                <div class="flex items-center justify-between py-2.5 px-3 bg-background-dark border border-border-dark rounded-lg">
-                    <div class="flex items-center gap-2">
-                        <span class="material-symbols-outlined text-sm text-slate-500">terminal</span>
-                        <span class="text-xs text-slate-400">Instancia</span>
-                    </div>
-                    <span id="waConfigInstanceStatus" class="flex items-center gap-1 text-xs font-medium text-slate-500">
-                        <span class="material-symbols-outlined text-sm">hourglass_empty</span> Verificando...
-                    </span>
-                </div>
-
-                <p class="text-[10px] text-slate-600 pt-1">As credenciais sao gerenciadas com seguranca nas variaveis de ambiente do Netlify.</p>
-
-                <!-- Botoes de acao -->
-                <div class="flex flex-wrap gap-2 pt-3">
-                    <button id="waDiagnoseBtn" onclick="diagnoseWhatsApp()" class="flex items-center gap-1.5 px-3 py-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-lg text-xs font-medium hover:bg-amber-500/20 transition-colors">
-                        <span class="material-symbols-outlined text-sm">troubleshoot</span>
-                        Diagnosticar API
-                    </button>
-                    <button onclick="restartWhatsAppInstance()" class="flex items-center gap-1.5 px-3 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg text-xs font-medium hover:bg-blue-500/20 transition-colors">
-                        <span class="material-symbols-outlined text-sm">restart_alt</span>
-                        Reiniciar Instancia
-                    </button>
-                    <button id="waForceResetBtn" onclick="forceResetWhatsApp()" class="flex items-center gap-1.5 px-3 py-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-xs font-medium hover:bg-red-500/20 transition-colors">
-                        <span class="material-symbols-outlined text-sm">power_settings_new</span>
-                        Forcar Reset Completo
-                    </button>
-                </div>
-
-                <!-- Resultado do diagnostico -->
-                <div id="waDiagResult" class="hidden mt-4 bg-background-dark border border-border-dark rounded-lg p-4 space-y-3">
-                    <div class="flex items-center gap-2 mb-2">
-                        <span class="material-symbols-outlined text-sm text-amber-400">troubleshoot</span>
-                        <span class="text-xs font-bold text-white">Resultado do Diagnostico</span>
-                    </div>
-                    <div id="waDiagRecommendation" class="text-xs font-medium p-2.5 rounded-lg"></div>
-                    <div id="waDiagTests" class="space-y-1.5"></div>
                 </div>
             </div>
         </div>
 
         <!-- Footer -->
-        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 text-[10px] sm:text-xs text-slate-600 font-medium pt-4">
-            <p class="text-center sm:text-left">&copy; 2026 | Meta Ads | Desenvolvido por Alisson Gouveia. Todos os direitos reservados.</p>
-            <div class="flex gap-4">
-                <a class="hover:text-slate-400" href="#">Termos</a>
-                <a class="hover:text-slate-400" href="#">Privacidade</a>
-                <a class="hover:text-slate-400" href="#">Suporte</a>
-            </div>
+        <div class="text-center text-[10px] text-slate-600 font-medium pt-4">
+            <p>&copy; 2026 | Meta Ads | Desenvolvido por Alisson Gouveia. Todos os direitos reservados.</p>
         </div>
     </div>
 

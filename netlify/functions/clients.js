@@ -4,9 +4,10 @@
 const { getStore } = require("@netlify/blobs");
 
 exports.handler = async (event, context) => {
+    const ALLOWED_ORIGIN = process.env.URL || 'https://dashboardmilo.netlify.app';
     const headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
+        'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         'Content-Type': 'application/json'
     };
@@ -57,7 +58,10 @@ exports.handler = async (event, context) => {
             const { password, client } = body;
 
             // Verificar senha admin
-            const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '123456789';
+            const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+            if (!ADMIN_PASSWORD) {
+                return { statusCode: 500, headers, body: JSON.stringify({ error: 'Configuracao de seguranca ausente' }) };
+            }
             if (password !== ADMIN_PASSWORD) {
                 return {
                     statusCode: 401,
@@ -85,6 +89,7 @@ exports.handler = async (event, context) => {
                 adAccountId: client.adAccountId,
                 color: client.color || getRandomColor(),
                 cplTargets: client.cplTargets || null,
+                whatsappNumber: client.whatsappNumber || null,
                 googleChatWebhook: client.googleChatWebhook || null,
                 reportSchedules: client.reportSchedules || [],
                 createdAt: new Date().toISOString()
@@ -111,7 +116,10 @@ exports.handler = async (event, context) => {
             const body = JSON.parse(event.body || '{}');
             const { password, clientId, updates } = body;
 
-            const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '123456789';
+            const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+            if (!ADMIN_PASSWORD) {
+                return { statusCode: 500, headers, body: JSON.stringify({ error: 'Configuracao de seguranca ausente' }) };
+            }
             if (password !== ADMIN_PASSWORD) {
                 return {
                     statusCode: 401,
@@ -146,6 +154,7 @@ exports.handler = async (event, context) => {
             if (updates.color) clients[index].color = updates.color;
             // cplTargets pode ser null (remover) ou objeto
             if (updates.hasOwnProperty('cplTargets')) clients[index].cplTargets = updates.cplTargets;
+            if (updates.hasOwnProperty('whatsappNumber')) clients[index].whatsappNumber = updates.whatsappNumber;
             if (updates.hasOwnProperty('googleChatWebhook')) clients[index].googleChatWebhook = updates.googleChatWebhook;
             if (updates.hasOwnProperty('reportSchedules')) clients[index].reportSchedules = updates.reportSchedules;
 
@@ -168,7 +177,10 @@ exports.handler = async (event, context) => {
             const { password, clientId } = body;
 
             // Verificar senha admin
-            const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '123456789';
+            const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+            if (!ADMIN_PASSWORD) {
+                return { statusCode: 500, headers, body: JSON.stringify({ error: 'Configuracao de seguranca ausente' }) };
+            }
             if (password !== ADMIN_PASSWORD) {
                 return {
                     statusCode: 401,
